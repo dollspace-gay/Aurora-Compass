@@ -15,7 +15,7 @@ import {IS_DEV} from '#/env'
 
 /**
  * @private
- * Registers the device's push notification token with the Bluesky server.
+ * Registers the device's push notification token with the Aurora Prism server.
  */
 async function _registerPushToken({
   agent,
@@ -37,7 +37,7 @@ async function _registerPushToken({
         : PUBLIC_APPVIEW_DID,
       platform: Platform.OS,
       token: token.data,
-      appId: 'xyz.blueskyweb.app',
+      appId: process.env.EXPO_PUBLIC_APP_BUNDLE_ID || 'com.example.auroraprism',
       ageRestricted: extra.ageRestricted ?? false,
     }
 
@@ -58,7 +58,7 @@ async function _registerPushToken({
 const _registerPushTokenDebounced = debounce(_registerPushToken, 100)
 
 /**
- * Hook to register the device's push notification token with the Bluesky. If
+ * Hook to register the device's push notification token with Aurora Prism. If
  * the user is not logged in, this will do nothing.
  *
  * Use this instead of using `_registerPushToken` or
@@ -102,7 +102,7 @@ async function getPushToken() {
 }
 
 /**
- * Hook to get the device push token and register it with the Bluesky server.
+ * Hook to get the device push token and register it with the Aurora Prism server.
  * Should only be called after a user has logged-in, since registration is an
  * authed endpoint.
  *

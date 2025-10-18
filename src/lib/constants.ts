@@ -4,13 +4,29 @@ import {type AppBskyActorDefs, BSKY_LABELER_DID} from '@atproto/api'
 import {type ProxyHeaderValue} from '#/state/session/agent'
 import {BLUESKY_PROXY_DID, CHAT_PROXY_DID} from '#/env'
 
+// Custom AppView Configuration
+// @ts-ignore
+const USE_CUSTOM_APPVIEW = process.env.EXPO_PUBLIC_USE_CUSTOM_APPVIEW === 'true'
+// @ts-ignore
+const CUSTOM_APPVIEW_URL = process.env.EXPO_PUBLIC_CUSTOM_APPVIEW_URL || 'http://localhost:3000'
+// @ts-ignore
+const CUSTOM_APPVIEW_DID = process.env.EXPO_PUBLIC_CUSTOM_APPVIEW_DID || 'did:web:localhost:3000'
+// @ts-ignore
+export const CUSTOM_APP_NAME = process.env.EXPO_PUBLIC_CUSTOM_APP_NAME || 'AppView Client'
+
+// Custom PDS Configuration (optional - defaults to Bluesky's PDS)
+// @ts-ignore
+const CUSTOM_PDS_URL = process.env.EXPO_PUBLIC_CUSTOM_PDS_URL || 'https://bsky.social'
+// @ts-ignore
+const CUSTOM_PDS_DID = process.env.EXPO_PUBLIC_CUSTOM_PDS_DID || 'did:web:bsky.social'
+
 export const LOCAL_DEV_SERVICE =
   Platform.OS === 'android' ? 'http://10.0.2.2:2583' : 'http://localhost:2583'
 export const STAGING_SERVICE = 'https://staging.bsky.dev'
-export const BSKY_SERVICE = 'https://bsky.social'
-export const BSKY_SERVICE_DID = 'did:web:bsky.social'
-export const PUBLIC_BSKY_SERVICE = 'https://public.api.bsky.app'
-export const DEFAULT_SERVICE = BSKY_SERVICE
+export const BSKY_SERVICE = USE_CUSTOM_APPVIEW ? CUSTOM_PDS_URL : 'https://bsky.social'
+export const BSKY_SERVICE_DID = USE_CUSTOM_APPVIEW ? CUSTOM_PDS_DID : 'did:web:bsky.social'
+export const PUBLIC_BSKY_SERVICE = USE_CUSTOM_APPVIEW ? CUSTOM_APPVIEW_URL : 'https://public.api.bsky.app'
+export const DEFAULT_SERVICE = USE_CUSTOM_APPVIEW ? CUSTOM_PDS_URL : BSKY_SERVICE
 const HELP_DESK_LANG = 'en-us'
 export const HELP_DESK_URL = `https://blueskyweb.zendesk.com/hc/${HELP_DESK_LANG}`
 export const EMBED_SERVICE = 'https://embed.bsky.app'
@@ -208,15 +224,20 @@ export const urls = {
   },
 }
 
-export const PUBLIC_APPVIEW = 'https://api.bsky.app'
-export const PUBLIC_APPVIEW_DID = 'did:web:api.bsky.app'
+export const PUBLIC_APPVIEW = USE_CUSTOM_APPVIEW ? CUSTOM_APPVIEW_URL : 'https://api.bsky.app'
+export const PUBLIC_APPVIEW_DID = USE_CUSTOM_APPVIEW ? CUSTOM_APPVIEW_DID : 'did:web:api.bsky.app'
 export const PUBLIC_STAGING_APPVIEW_DID = 'did:web:api.staging.bsky.dev'
 
 export const DEV_ENV_APPVIEW = `http://localhost:2584` // always the same
 
 // temp hack for e2e - esb
+// Modified to support custom AppView
+// NOTE: When using custom AppView, we DON'T set the proxy header
+// Instead, the client makes direct requests to the AppView
 export const BLUESKY_PROXY_HEADER = {
-  value: `${BLUESKY_PROXY_DID}#bsky_appview`,
+  value: USE_CUSTOM_APPVIEW
+    ? '' // Empty string = no proxy header for custom AppView
+    : `${BLUESKY_PROXY_DID}#bsky_appview`,
   get() {
     return this.value as ProxyHeaderValue
   },

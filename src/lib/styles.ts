@@ -54,11 +54,11 @@ export const colors = {
   purple4: '#6d00fa',
   purple5: '#380080',
 
-  green1: '#c1ffb8',
-  green2: '#27f406',
-  green3: '#20bc07',
-  green4: '#148203',
-  green5: '#082b03',
+  green1: '#ffb8c1',  // Light red/pink for aurora theme
+  green2: '#ff3366',  // Vibrant red
+  green3: '#e6194b',  // Mid red
+  green4: '#9e0028',  // Dark red
+  green5: '#5c0016',  // Darkest red
 
   unreadNotifBg: '#ebf6ff',
   brandBlue: '#0066FF',
@@ -66,9 +66,9 @@ export const colors = {
 }
 
 export const gradients = {
-  blueLight: {start: '#5A71FA', end: colors.blue3}, // buttons
-  blue: {start: '#5E55FB', end: colors.blue3}, // fab
-  blueDark: {start: '#5F45E0', end: colors.blue3}, // avis, banner
+  blueLight: {start: '#ff3366', end: '#6d00fa'}, // Red to purple - buttons
+  blue: {start: '#e6194b', end: '#9747ff'}, // Red to purple - fab
+  blueDark: {start: '#9e0028', end: '#380080'}, // Dark red to dark purple - avis, banner
 }
 
 /**

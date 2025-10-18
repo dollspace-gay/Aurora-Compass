@@ -207,13 +207,13 @@ function LandingScreenLoaded({
           ) : null}
           <View style={[a.gap_sm]}>
             <Button
-              label={_(msg`Join Bluesky`)}
+              label={_(msg`Join Aurora Prism`)}
               onPress={onJoinPress}
               variant="solid"
               color="primary"
               size="large">
               <ButtonText style={[a.text_lg]}>
-                <Trans>Join Bluesky</Trans>
+                <Trans>Join Aurora Prism</Trans>
               </ButtonText>
             </Button>
             <View style={[a.flex_row, a.align_center, a.gap_sm]}>
@@ -327,11 +327,11 @@ function LandingScreenLoaded({
       />
       <Prompt.Outer control={androidDialogControl}>
         <Prompt.TitleText>
-          <Trans>Download Bluesky</Trans>
+          <Trans>Download Aurora Prism</Trans>
         </Prompt.TitleText>
         <Prompt.DescriptionText>
           <Trans>
-            The experience is better in the app. Download Bluesky now and we'll
+            The experience is better in the app. Download Aurora Prism now and we'll
             pick back up where you left off.
           </Trans>
         </Prompt.DescriptionText>

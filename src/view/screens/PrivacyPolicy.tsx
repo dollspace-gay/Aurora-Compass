@@ -35,14 +35,7 @@ export const PrivacyPolicyScreen = (_props: Props) => {
       <ScrollView style={[s.hContentRegion, pal.view]}>
         <View style={[s.p20]}>
           <Text style={pal.text}>
-            <Trans>
-              The Privacy Policy has been moved to{' '}
-              <TextLink
-                style={pal.link}
-                href="https://bsky.social/about/support/privacy-policy"
-                text="bsky.social/about/support/privacy-policy"
-              />
-            </Trans>
+            <Trans>Please contact your instance administrator for Privacy Policy information.</Trans>
           </Text>
         </View>
         <View style={s.footerSpacer} />

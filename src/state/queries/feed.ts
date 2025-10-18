@@ -25,7 +25,7 @@ import {sanitizeHandle} from '#/lib/strings/handles'
 import {STALE} from '#/state/queries'
 import {RQKEY as listQueryKey} from '#/state/queries/list'
 import {usePreferencesQuery} from '#/state/queries/preferences'
-import {useAgent, useSession} from '#/state/session'
+import {useAgent, useAppViewAgent, useSession} from '#/state/session'
 import {router} from '#/routes'
 import {useModerationOpts} from '../preferences/moderation-opts'
 import {type FeedDescriptor} from './post-feed'
@@ -171,7 +171,7 @@ export function getAvatarTypeFromUri(uri: string) {
 
 export function useFeedSourceInfoQuery({uri}: {uri: string}) {
   const type = getFeedTypeFromUri(uri)
-  const agent = useAgent()
+  const agent = useAppViewAgent() // Use AppView for feed queries
 
   return useQuery({
     staleTime: STALE.INFINITY,
@@ -221,7 +221,7 @@ export function createGetPopularFeedsQueryKey(
 
 export function useGetPopularFeedsQuery(options?: GetPopularFeedsOptions) {
   const {hasSession} = useSession()
-  const agent = useAgent()
+  const agent = useAppViewAgent() // Use AppView for feed queries
   const limit = options?.limit || 10
   const {data: preferences} = usePreferencesQuery()
   const queryClient = useQueryClient()
@@ -329,7 +329,7 @@ export function useGetPopularFeedsQuery(options?: GetPopularFeedsOptions) {
 }
 
 export function useSearchPopularFeedsMutation() {
-  const agent = useAgent()
+  const agent = useAppViewAgent() // Use AppView for feed queries
   const moderationOpts = useModerationOpts()
 
   return useMutation({
@@ -364,7 +364,7 @@ export function usePopularFeedsSearch({
   query: string
   enabled?: boolean
 }) {
-  const agent = useAgent()
+  const agent = useAppViewAgent() // Use AppView for feed queries
   const moderationOpts = useModerationOpts()
   const enabledInner = enabled ?? Boolean(moderationOpts)
 
@@ -422,7 +422,7 @@ const pinnedFeedInfosQueryKeyRoot = 'pinnedFeedsInfos'
 
 export function usePinnedFeedsInfos() {
   const {hasSession} = useSession()
-  const agent = useAgent()
+  const agent = useAppViewAgent() // Use AppView for feed queries
   const {data: preferences, isLoading: isLoadingPrefs} = usePreferencesQuery()
   const pinnedItems = preferences?.savedFeeds.filter(feed => feed.pinned) ?? []
 
@@ -529,7 +529,7 @@ export type SavedFeedItem =
     }
 
 export function useSavedFeeds() {
-  const agent = useAgent()
+  const agent = useAppViewAgent() // Use AppView for feed queries
   const {data: preferences, isLoading: isLoadingPrefs} = usePreferencesQuery()
   const savedItems = preferences?.savedFeeds ?? []
   const queryClient = useQueryClient()
@@ -630,7 +630,7 @@ export function useSavedFeeds() {
 const feedInfoQueryKeyRoot = 'feedInfo'
 
 export function useFeedInfo(feedUri: string | undefined) {
-  const agent = useAgent()
+  const agent = useAppViewAgent() // Use AppView for feed queries
 
   return useQuery({
     staleTime: STALE.INFINITY,

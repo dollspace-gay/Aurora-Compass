@@ -38,14 +38,7 @@ export const CommunityGuidelinesScreen = (_props: Props) => {
       <ScrollView style={[s.hContentRegion, pal.view]}>
         <View style={[s.p20]}>
           <Text style={pal.text}>
-            <Trans>
-              The Community Guidelines have been moved to{' '}
-              <TextLink
-                style={pal.link}
-                href="https://bsky.social/about/support/community-guidelines"
-                text="bsky.social/about/support/community-guidelines"
-              />
-            </Trans>
+            <Trans>Please contact your instance administrator for Community Guidelines information.</Trans>
           </Text>
         </View>
         <View style={s.footerSpacer} />

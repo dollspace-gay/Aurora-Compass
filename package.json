@@ -1,6 +1,6 @@
 {
-  "name": "bsky.app",
-  "version": "1.109.0",
+  "name": "appview-test-client",
+  "version": "1.109.0-custom",
   "private": true,
   "engines": {
     "node": ">=20"

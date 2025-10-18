@@ -119,3 +119,7 @@ src/locale/locales/**/*.js
 
 # ogcard assets
 bskyogcard/src/assets/fonts/noto-*
+src/state/session/agent.ts
+src/view/com/posts/PostFeedReason.tsx
+.gitignore
+.gitignore

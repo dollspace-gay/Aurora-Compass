@@ -70,13 +70,7 @@ export function PostFeedReason({
       moderation?.ui('displayName'),
     )
     return (
-      <Link
-        style={styles.includeReason}
-        to={makeProfileLink(reason.by)}
-        label={
-          isOwner ? _(msg`Reposted by you`) : _(msg`Reposted by ${reposter}`)
-        }
-        onPress={onOpenReposter}>
+      <View style={styles.includeReason}>
         <RepostIcon
           style={[t.atoms.text_contrast_medium, {marginRight: 3}]}
           width={13}
@@ -107,7 +101,7 @@ export function PostFeedReason({
             </Trans>
           )}
         </Text>
-      </Link>
+      </View>
     )
   }
 

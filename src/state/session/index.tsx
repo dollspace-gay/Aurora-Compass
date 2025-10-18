@@ -390,3 +390,28 @@ export function useAgent(): BskyAgent {
   }
   return agent
 }
+
+/**
+ * Returns an agent configured to use the AppView for read operations.
+ * For custom AppViews, this ensures feed/profile queries go to the AppView
+ * instead of the user's PDS.
+ */
+export function useAppViewAgent(): BskyAgent {
+  const authenticatedAgent = useAgent()
+  const {hasSession} = useSession()
+
+  // If user is logged in, create a clone of their agent but pointed at the AppView
+  const appViewAgent = React.useMemo(() => {
+    if (hasSession && authenticatedAgent.session) {
+      const {createPublicAgent} = require('./agent')
+      const agent = createPublicAgent()
+      // Copy the session so authenticated requests work
+      agent.sessionManager.session = authenticatedAgent.session
+      return agent
+    }
+    // If not logged in, the authenticated agent is already a public agent
+    return authenticatedAgent
+  }, [hasSession, authenticatedAgent])
+
+  return appViewAgent
+}
