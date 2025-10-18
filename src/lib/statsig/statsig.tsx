@@ -60,7 +60,9 @@ function createStatsigOptions(prefetchUsers: StatsigUser[]) {
     initTimeoutMs: 1,
     // Get fresh flags for other accounts as well, if any.
     prefetchUsers,
-    api: 'https://events.bsky.app/v2',
+    // Tracking disabled - no external analytics
+    api: 'https://localhost:1', // Invalid URL to prevent any network calls
+    disableLogging: true,
   }
 }
 
