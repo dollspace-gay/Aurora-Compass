@@ -43,8 +43,9 @@ export function createPublicAgent() {
 
   console.log('[DEBUG] Creating public agent with service:', PUBLIC_BSKY_SERVICE)
   const agent = new BskyAppAgent({service: PUBLIC_BSKY_SERVICE})
+  // Only use proxy header if NOT using custom AppView
   const proxyHeader = BLUESKY_PROXY_HEADER.get()
-  if (proxyHeader) {
+  if (proxyHeader && !USE_CUSTOM_APPVIEW) {
     agent.configureProxy(proxyHeader)
   }
   return agent
@@ -96,8 +97,10 @@ export async function createAgentAndResume(
     }
   }
 
+  // Only use proxy header if NOT using custom AppView
+  // Custom AppView should receive direct requests, not proxied through Bluesky
   const proxyHeader = BLUESKY_PROXY_HEADER.get()
-  if (proxyHeader) {
+  if (proxyHeader && !USE_CUSTOM_APPVIEW) {
     agent.configureProxy(proxyHeader)
   }
 
@@ -136,8 +139,10 @@ export async function createAgentAndLogin(
   const gates = tryFetchGates(account.did, 'prefer-fresh-gates')
   const moderation = configureModerationForAccount(agent, account)
 
+  // Only use proxy header if NOT using custom AppView
+  // Custom AppView should receive direct requests, not proxied through Bluesky
   const proxyHeader = BLUESKY_PROXY_HEADER.get()
-  if (proxyHeader) {
+  if (proxyHeader && !USE_CUSTOM_APPVIEW) {
     agent.configureProxy(proxyHeader)
   }
 
@@ -228,8 +233,10 @@ export async function createAgentAndCreateAccount(
     logger.error(e, {message: `session: failed snoozeEmailConfirmationPrompt`})
   }
 
+  // Only use proxy header if NOT using custom AppView
+  // Custom AppView should receive direct requests, not proxied through Bluesky
   const proxyHeader = BLUESKY_PROXY_HEADER.get()
-  if (proxyHeader) {
+  if (proxyHeader && !USE_CUSTOM_APPVIEW) {
     agent.configureProxy(proxyHeader)
   }
 
