@@ -101,9 +101,6 @@ export function isLabelerSubscribed(
   modOpts: ModerationOpts,
 ) {
   labeler = typeof labeler === 'string' ? labeler : labeler.creator.did
-  if (isAppLabeler(labeler)) {
-    return true
-  }
   return modOpts.prefs.labelers.find(l => l.did === labeler)
 }
 

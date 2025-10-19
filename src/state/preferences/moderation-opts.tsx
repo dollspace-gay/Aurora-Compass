@@ -41,12 +41,8 @@ export function Provider({children}: React.PropsWithChildren<{}>) {
       userDid,
       prefs: {
         ...moderationPrefs,
-        labelers: moderationPrefs.labelers.length
-          ? moderationPrefs.labelers
-          : BskyAgent.appLabelers.map(did => ({
-              did,
-              labels: DEFAULT_LOGGED_OUT_LABEL_PREFERENCES,
-            })),
+        // Use user's labelers only - don't force default app labelers
+        labelers: moderationPrefs.labelers,
         hiddenPosts: hiddenPosts || [],
       },
       labelDefs,

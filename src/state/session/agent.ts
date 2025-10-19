@@ -20,6 +20,9 @@ import {
   PUBLIC_BSKY_SERVICE,
   TIMELINE_SAVED_FEED,
 } from '#/lib/constants'
+
+// Check if we're using a custom AppView
+const USE_CUSTOM_APPVIEW = process.env.EXPO_PUBLIC_USE_CUSTOM_APPVIEW === 'true'
 import {tryFetchGates} from '#/lib/statsig/statsig'
 import {getAge} from '#/lib/strings/time'
 import {logger} from '#/logger'
@@ -38,6 +41,7 @@ export type ProxyHeaderValue = `${Did}#${AtprotoServiceType}`
 export function createPublicAgent() {
   configureModerationForGuest() // Side effect but only relevant for tests
 
+  console.log('[DEBUG] Creating public agent with service:', PUBLIC_BSKY_SERVICE)
   const agent = new BskyAppAgent({service: PUBLIC_BSKY_SERVICE})
   const proxyHeader = BLUESKY_PROXY_HEADER.get()
   if (proxyHeader) {
@@ -54,10 +58,22 @@ export async function createAgentAndResume(
     event: AtpSessionEvent,
   ) => void,
 ) {
-  const agent = new BskyAppAgent({service: storedAccount.service})
-  if (storedAccount.pdsUrl) {
+  // When using a custom AppView, create agent with AppView URL
+  // The PDS URL will still be used for writes via sessionManager.pdsUrl
+  const serviceUrl = USE_CUSTOM_APPVIEW ? PUBLIC_BSKY_SERVICE : storedAccount.service
+  console.log('[AGENT] Creating agent for logged-in user with service:', serviceUrl)
+  console.log('[AGENT] Original PDS service:', storedAccount.service)
+
+  const agent = new BskyAppAgent({service: serviceUrl})
+
+  // Set PDS URL for write operations (posts, likes, follows, etc.)
+  if (USE_CUSTOM_APPVIEW) {
+    // Use the original PDS for writes
+    agent.sessionManager.pdsUrl = new URL(storedAccount.service)
+  } else if (storedAccount.pdsUrl) {
     agent.sessionManager.pdsUrl = new URL(storedAccount.pdsUrl)
   }
+
   const gates = tryFetchGates(storedAccount.did, 'prefer-low-latency')
   const moderation = configureModerationForAccount(agent, storedAccount)
   const prevSession: AtpSessionData = sessionAccountToSession(storedAccount)
@@ -106,6 +122,8 @@ export async function createAgentAndLogin(
     event: AtpSessionEvent,
   ) => void,
 ) {
+  // Login to the PDS first
+  console.log('[AGENT] Creating agent for login with PDS service:', service)
   const agent = new BskyAppAgent({service})
   await agent.login({
     identifier,

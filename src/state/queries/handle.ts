@@ -20,7 +20,7 @@ export function useFetchHandle() {
     async (handleOrDid: string) => {
       if (handleOrDid.startsWith('did:')) {
         const res = await queryClient.fetchQuery({
-          staleTime: STALE.MINUTES.FIVE,
+          staleTime: STALE.HOURS.ONE,
           queryKey: fetchHandleQueryKey(handleOrDid),
           queryFn: () => agent.getProfile({actor: handleOrDid}),
         })

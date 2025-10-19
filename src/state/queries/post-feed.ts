@@ -15,6 +15,7 @@ import {
   type QueryClient,
   type QueryKey,
   useInfiniteQuery,
+  useQueryClient,
 } from '@tanstack/react-query'
 
 import {AuthorFeedAPI} from '#/lib/api/feed/author'
@@ -35,6 +36,7 @@ import {logger} from '#/logger'
 import {useAgeAssuranceContext} from '#/state/ageAssurance'
 import {STALE} from '#/state/queries'
 import {DEFAULT_LOGGED_OUT_PREFERENCES} from '#/state/queries/preferences/const'
+import {RQKEY as PROFILE_RQKEY} from '#/state/queries/profile'
 import {useAgent, useAppViewAgent} from '#/state/session'
 import * as userActionHistory from '#/state/userActionHistory'
 import {KnownError} from '#/view/com/posts/PostFeedErrorMessage'
@@ -128,11 +130,75 @@ export interface FeedPage {
  */
 const MIN_POSTS = 30
 
+/**
+ * Extract all unique DIDs from a feed page for profile prefetching
+ */
+function extractDidsFromFeed(feed: AppBskyFeedDefs.FeedViewPost[]): Set<string> {
+  const dids = new Set<string>()
+
+  feed.forEach(item => {
+    // Post author
+    dids.add(item.post.author.did)
+
+    // Reply parent author
+    if (AppBskyFeedDefs.isPostView(item.reply?.parent)) {
+      dids.add(item.reply.parent.author.did)
+    }
+
+    // Reply root author
+    if (AppBskyFeedDefs.isPostView(item.reply?.root)) {
+      dids.add(item.reply.root.author.did)
+    }
+
+    // Reposter
+    if (
+      item.reason &&
+      AppBskyFeedDefs.isReasonRepost(item.reason) &&
+      item.reason.by
+    ) {
+      dids.add(item.reason.by.did)
+    }
+
+    // Quoted post author
+    const quotedPost = getEmbeddedPost(item.post.embed)
+    if (quotedPost?.author) {
+      dids.add(quotedPost.author.did)
+    }
+  })
+
+  return dids
+}
+
+/**
+ * Prefetch profiles for all users mentioned in a feed page
+ * This loads profile data in the background so it's cached when the user clicks
+ */
+function prefetchProfilesFromFeed(
+  queryClient: QueryClient,
+  agent: BskyAgent,
+  feed: AppBskyFeedDefs.FeedViewPost[],
+): void {
+  const dids = extractDidsFromFeed(feed)
+
+  // Prefetch all profiles in background
+  dids.forEach(did => {
+    queryClient.prefetchQuery({
+      queryKey: PROFILE_RQKEY(did),
+      queryFn: async () => {
+        const res = await agent.getProfile({actor: did})
+        return res.data
+      },
+      staleTime: STALE.MINUTES.THIRTY,
+    })
+  })
+}
+
 export function usePostFeedQuery(
   feedDesc: FeedDescriptor,
   params?: FeedParams,
   opts?: {enabled?: boolean; ignoreFilterFor?: string},
 ) {
+  const queryClient = useQueryClient()
   const feedTuners = useFeedTuners(feedDesc)
   const moderationOpts = useModerationOpts()
   const {data: preferences} = usePreferencesQuery()
@@ -224,6 +290,11 @@ export function usePostFeedQuery(
               DEFAULT_LOGGED_OUT_PREFERENCES.moderationPrefs,
           )
         }
+
+        // Prefetch profiles for all users mentioned in the feed
+        // This loads profile data in the background while the user scrolls
+        // so that when they click on a profile, it's already cached
+        prefetchProfilesFromFeed(queryClient, agent, res.feed)
 
         return {
           api,

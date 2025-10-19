@@ -13,6 +13,7 @@ import {
 import {logger} from '#/logger'
 import {isIOS} from '#/platform/detection'
 import {useAgeAssurance} from '#/state/ageAssurance/useAgeAssurance'
+import {useNoAppLabelers, useSetNoAppLabelers} from '#/state/preferences'
 import {
   useMyLabelersQuery,
   usePreferencesQuery,
@@ -468,6 +469,8 @@ export function ModerationScreenInner({
         <Trans>Advanced</Trans>
       </Text>
 
+      <AppLabelersToggle />
+
       {isLabelersLoading ? (
         <View style={[a.w_full, a.align_center, a.p_lg]}>
           <Loader size="xl" />
@@ -527,6 +530,45 @@ export function ModerationScreenInner({
         </View>
       )}
       <View style={{height: 150}} />
+    </View>
+  )
+}
+
+function AppLabelersToggle() {
+  const {_} = useLingui()
+  const t = useTheme()
+  const noAppLabelers = useNoAppLabelers()
+  const setNoAppLabelers = useSetNoAppLabelers()
+
+  return (
+    <View style={[a.mb_md]}>
+      <Toggle.Item
+        name="no_app_labelers"
+        label={_(msg`Disable default app labelers`)}
+        value={noAppLabelers}
+        onChange={setNoAppLabelers}
+        style={[a.w_full, a.p_lg, a.rounded_sm, t.atoms.bg_contrast_25]}>
+        <View style={[a.flex_1]}>
+          <Toggle.LabelText style={[a.font_semi_bold, a.pb_xs]}>
+            <Trans>Disable default app labelers</Trans>
+          </Toggle.LabelText>
+          <Text style={[a.text_sm, t.atoms.text_contrast_medium, a.leading_snug]}>
+            <Trans>
+              When enabled, Bluesky's moderation service will not be automatically included.
+              You'll have full control over which labelers you subscribe to.
+            </Trans>
+          </Text>
+        </View>
+        <Toggle.Platform />
+      </Toggle.Item>
+
+      {noAppLabelers && (
+        <Admonition type="tip" style={[a.mt_sm]}>
+          <Trans>
+            Restart the app for this change to take effect. Some AppViews may add their own default labeler if you have none subscribed.
+          </Trans>
+        </Admonition>
+      )}
     </View>
   )
 }

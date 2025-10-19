@@ -23,11 +23,10 @@ export function useMyLabelersQuery({
   excludeNonConfigurableLabelers?: boolean
 } = {}) {
   const prefs = usePreferencesQuery()
+  // Only use user's explicitly subscribed labelers - don't force app labelers
   let dids = Array.from(
     new Set(
-      BskyAgent.appLabelers.concat(
-        prefs.data?.moderationPrefs.labelers.map(l => l.did) || [],
-      ),
+      prefs.data?.moderationPrefs.labelers.map(l => l.did) || [],
     ),
   )
   if (excludeNonConfigurableLabelers) {

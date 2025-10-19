@@ -13,7 +13,6 @@ import {useLingui} from '@lingui/react'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import {MAX_LABELERS} from '#/lib/constants'
 import {useHaptics} from '#/lib/haptics'
-import {isAppLabeler} from '#/lib/moderation'
 import {logger} from '#/logger'
 import {isIOS} from '#/platform/detection'
 import {useProfileShadow} from '#/state/cache/profile-shadow'
@@ -189,7 +188,7 @@ let ProfileHeaderLabeler = ({
                 control={editProfileControl}
               />
             </>
-          ) : !isAppLabeler(profile.did) ? (
+          ) : (
             <>
               <Button
                 testID="toggleSubscribeBtn"
@@ -237,7 +236,7 @@ let ProfileHeaderLabeler = ({
                 )}
               </Button>
             </>
-          ) : null}
+          )}
           <ProfileMenu profile={profile} />
         </View>
         <View style={[a.flex_col, a.gap_2xs, a.pt_2xs, a.pb_md]}>
@@ -259,9 +258,8 @@ let ProfileHeaderLabeler = ({
                 />
               </View>
             ) : undefined}
-            {!isAppLabeler(profile.did) && (
-              <View style={[a.flex_row, a.gap_xs, a.align_center, a.pt_lg]}>
-                <Button
+            <View style={[a.flex_row, a.gap_xs, a.align_center, a.pt_lg]}>
+              <Button
                   testID="toggleLikeBtn"
                   size="small"
                   color="secondary"
@@ -314,7 +312,6 @@ let ProfileHeaderLabeler = ({
                   </Link>
                 )}
               </View>
-            )}
           </>
         )}
       </View>

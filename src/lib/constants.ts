@@ -14,6 +14,12 @@ const CUSTOM_APPVIEW_DID = process.env.EXPO_PUBLIC_CUSTOM_APPVIEW_DID || 'did:we
 // @ts-ignore
 export const CUSTOM_APP_NAME = process.env.EXPO_PUBLIC_CUSTOM_APP_NAME || 'AppView Client'
 
+// Debug logging - This will show up in Metro console
+console.log('[CONSTANTS] USE_CUSTOM_APPVIEW:', USE_CUSTOM_APPVIEW)
+console.log('[CONSTANTS] CUSTOM_APPVIEW_URL:', CUSTOM_APPVIEW_URL)
+console.log('[CONSTANTS] EXPO_PUBLIC_USE_CUSTOM_APPVIEW env:', process.env.EXPO_PUBLIC_USE_CUSTOM_APPVIEW)
+console.log('[CONSTANTS] EXPO_PUBLIC_CUSTOM_APPVIEW_URL env:', process.env.EXPO_PUBLIC_CUSTOM_APPVIEW_URL)
+
 // Custom PDS Configuration (optional - defaults to Bluesky's PDS)
 // @ts-ignore
 const CUSTOM_PDS_URL = process.env.EXPO_PUBLIC_CUSTOM_PDS_URL || 'https://bsky.social'
@@ -26,6 +32,7 @@ export const STAGING_SERVICE = 'https://staging.bsky.dev'
 export const BSKY_SERVICE = USE_CUSTOM_APPVIEW ? CUSTOM_PDS_URL : 'https://bsky.social'
 export const BSKY_SERVICE_DID = USE_CUSTOM_APPVIEW ? CUSTOM_PDS_DID : 'did:web:bsky.social'
 export const PUBLIC_BSKY_SERVICE = USE_CUSTOM_APPVIEW ? CUSTOM_APPVIEW_URL : 'https://public.api.bsky.app'
+console.log('[CONSTANTS] PUBLIC_BSKY_SERVICE:', PUBLIC_BSKY_SERVICE)
 export const DEFAULT_SERVICE = USE_CUSTOM_APPVIEW ? CUSTOM_PDS_URL : BSKY_SERVICE
 const HELP_DESK_LANG = 'en-us'
 export const HELP_DESK_URL = `https://blueskyweb.zendesk.com/hc/${HELP_DESK_LANG}`

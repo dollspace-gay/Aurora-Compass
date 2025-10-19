@@ -59,7 +59,7 @@ export const profilesQueryKey = (handles: string[]) => [
 
 export function useProfileQuery({
   did,
-  staleTime = STALE.SECONDS.FIFTEEN,
+  staleTime = STALE.MINUTES.THIRTY,
 }: {
   did: string | undefined
   staleTime?: number
@@ -75,7 +75,13 @@ export function useProfileQuery({
     refetchOnWindowFocus: true,
     queryKey: RQKEY(did ?? ''),
     queryFn: async () => {
+      console.log('[PROFILE_QUERY] Fetching profile for DID:', did)
+      console.log('[PROFILE_QUERY] Agent service URL:', agent.service.toString())
       const res = await agent.getProfile({actor: did ?? ''})
+      console.log('[PROFILE_QUERY] Response status:', res.success ? 'success' : 'error')
+      if (!res.success) {
+        console.error('[PROFILE_QUERY] Error fetching profile:', res)
+      }
       return res.data
     },
     placeholderData: () => {
