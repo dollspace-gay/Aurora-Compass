@@ -114,7 +114,21 @@ pub struct LoginResult {
 /// Authentication service
 ///
 /// Provides high-level authentication flows with comprehensive error handling,
-/// session validation, and multi-account support.
+/// session validation, and **multi-account support**.
+///
+/// # Multi-Account Support
+///
+/// The AuthService supports managing multiple concurrent accounts with per-account
+/// state isolation:
+///
+/// - **Multiple Sessions**: Store and manage sessions for multiple accounts simultaneously
+/// - **Account Switching**: Switch between accounts with [`switch_account()`](Self::switch_account)
+/// - **Account Management**: List, add, and remove accounts with [`list_accounts()`](Self::list_accounts)
+///   and [`remove_account()`](Self::remove_account)
+/// - **Per-Account State**: Each account maintains its own authentication tokens,
+///   user information, and session state completely isolated from other accounts
+/// - **Session Persistence**: All account sessions are persisted to disk and survive
+///   application restarts
 ///
 /// # Example
 ///
@@ -126,16 +140,33 @@ pub struct LoginResult {
 ///     // Create auth service
 ///     let auth = AuthService::new("sessions.json").await?;
 ///
-///     // Login
-///     let params = LoginParams {
+///     // Login to first account
+///     let params1 = LoginParams {
 ///         identifier: "alice.bsky.social".to_string(),
 ///         password: "password123".to_string(),
 ///         auth_factor_token: None,
 ///         service: None,
 ///     };
+///     let alice = auth.login(params1).await?;
+///     println!("Logged in as: {}", alice.handle);
 ///
-///     let result = auth.login(params).await?;
-///     println!("Logged in as: {}", result.handle);
+///     // Login to second account (both accounts are now stored)
+///     let params2 = LoginParams {
+///         identifier: "bob.bsky.social".to_string(),
+///         password: "password456".to_string(),
+///         auth_factor_token: None,
+///         service: None,
+///     };
+///     let bob = auth.login(params2).await?;
+///     println!("Logged in as: {}", bob.handle);
+///
+///     // List all accounts
+///     let accounts = auth.list_accounts().await;
+///     println!("Total accounts: {}", accounts.len());
+///
+///     // Switch back to first account
+///     auth.switch_account(&alice.did).await?;
+///     println!("Switched back to: {}", alice.handle);
 ///
 ///     Ok(())
 /// }
@@ -467,5 +498,214 @@ mod tests {
         let auth = AuthService::new(session_path).await.unwrap();
         let result = auth.resume_session().await.unwrap();
         assert!(result.is_none());
+    }
+
+    // Multi-account tests
+
+    #[tokio::test]
+    async fn test_multi_account_list_empty() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let accounts = auth.list_accounts().await;
+
+        assert_eq!(accounts.len(), 0, "Should have no accounts initially");
+    }
+
+    #[tokio::test]
+    async fn test_multi_account_switch_no_accounts() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let result = auth.switch_account("did:plc:nonexistent").await;
+
+        assert!(result.is_err(), "Should fail to switch to non-existent account");
+        assert!(matches!(result.unwrap_err(), AuthError::Session(_)));
+    }
+
+    #[tokio::test]
+    async fn test_multi_account_remove_nonexistent() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let result = auth.remove_account("did:plc:nonexistent").await;
+
+        // Removing non-existent account returns an error from SessionManager
+        assert!(result.is_err(), "Removing non-existent account should return error");
+    }
+
+    #[tokio::test]
+    async fn test_multi_account_logout_current_no_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let result = auth.logout_current().await;
+
+        // Logout returns error when there's no session to logout from
+        assert!(result.is_err(), "Logout current should return error when no session");
+    }
+
+    #[tokio::test]
+    async fn test_multi_account_logout_all_no_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let result = auth.logout_all().await;
+
+        // Logout all should work even with no sessions
+        assert!(result.is_ok(), "Logout all should succeed even with no sessions");
+    }
+
+    #[tokio::test]
+    async fn test_multi_account_current_session_none() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let session = auth.current_session().await;
+
+        assert!(session.is_none(), "Should have no current session");
+    }
+
+    #[tokio::test]
+    async fn test_multi_account_validate_no_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let is_valid = auth.validate_session().await;
+
+        assert!(!is_valid, "Session should not be valid when there's no session");
+    }
+
+    #[tokio::test]
+    async fn test_multi_account_expiring_soon_no_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let is_expiring = auth.is_session_expiring_soon().await;
+
+        assert!(!is_expiring, "Should not be expiring when there's no session");
+    }
+
+    #[tokio::test]
+    async fn test_multi_account_refresh_if_needed_no_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let result = auth.refresh_if_needed().await;
+
+        assert!(result.is_ok(), "Refresh should succeed even with no session");
+    }
+
+    #[tokio::test]
+    async fn test_login_params_serialization() {
+        let params = LoginParams {
+            identifier: "alice.bsky.social".to_string(),
+            password: "password123".to_string(),
+            auth_factor_token: Some("123456".to_string()),
+            service: Some("https://bsky.social".to_string()),
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+        let deserialized: LoginParams = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.identifier, "alice.bsky.social");
+        assert_eq!(deserialized.password, "password123");
+        assert_eq!(deserialized.auth_factor_token, Some("123456".to_string()));
+        assert_eq!(deserialized.service, Some("https://bsky.social".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_create_account_params_serialization() {
+        let params = CreateAccountParams {
+            email: "alice@example.com".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            password: "password123".to_string(),
+            invite_code: Some("invite-code".to_string()),
+            service: Some("https://bsky.social".to_string()),
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+        let deserialized: CreateAccountParams = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.email, "alice@example.com");
+        assert_eq!(deserialized.handle, "alice.bsky.social");
+        assert_eq!(deserialized.password, "password123");
+        assert_eq!(deserialized.invite_code, Some("invite-code".to_string()));
+        assert_eq!(deserialized.service, Some("https://bsky.social".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_login_result_serialization() {
+        let result = LoginResult {
+            did: "did:plc:abc123".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            email: Some("alice@example.com".to_string()),
+            email_confirmed: true,
+            two_factor_enabled: false,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: LoginResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.did, "did:plc:abc123");
+        assert_eq!(deserialized.handle, "alice.bsky.social");
+        assert_eq!(deserialized.email, Some("alice@example.com".to_string()));
+        assert_eq!(deserialized.email_confirmed, true);
+        assert_eq!(deserialized.two_factor_enabled, false);
+    }
+
+    #[tokio::test]
+    async fn test_auth_service_with_custom_service() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::with_service(session_path, "https://custom.service")
+            .await
+            .unwrap();
+
+        assert!(auth.current_session().await.is_none());
+        assert_eq!(auth.list_accounts().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_auth_error_display() {
+        let err = AuthError::InvalidCredentials;
+        assert_eq!(err.to_string(), "Invalid credentials");
+
+        let err = AuthError::AccountNotFound("did:plc:test".to_string());
+        assert_eq!(err.to_string(), "Account not found: did:plc:test");
+
+        let err = AuthError::NoSession;
+        assert_eq!(err.to_string(), "No active session");
+
+        let err = AuthError::SessionExpired;
+        assert_eq!(err.to_string(), "Session expired");
+
+        let err = AuthError::TwoFactorRequired;
+        assert_eq!(err.to_string(), "Two-factor authentication required");
+
+        let err = AuthError::Invalid2FAToken;
+        assert_eq!(err.to_string(), "Invalid two-factor authentication token");
+
+        let err = AuthError::AccountSuspended("reason".to_string());
+        assert_eq!(err.to_string(), "Account suspended: reason");
+
+        let err = AuthError::AccountDeactivated;
+        assert_eq!(err.to_string(), "Account deactivated");
+
+        let err = AuthError::Network("connection failed".to_string());
+        assert_eq!(err.to_string(), "Network error: connection failed");
+
+        let err = AuthError::Config("missing key".to_string());
+        assert_eq!(err.to_string(), "Configuration error: missing key");
     }
 }
