@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::feeds::PostView;
 use crate::profiles::{ProfileView, ProfileViewBasic};
 use atproto_client::xrpc::XrpcClient;
 
@@ -275,6 +276,267 @@ impl SearchRanking {
     }
 }
 
+/// Sort order for post search results
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PostSearchSort {
+    /// Most relevant results first (default)
+    #[default]
+    Top,
+    /// Most recent results first
+    Latest,
+}
+
+impl PostSearchSort {
+    /// Convert to API string value
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PostSearchSort::Top => "top",
+            PostSearchSort::Latest => "latest",
+        }
+    }
+}
+
+/// Parameters for post search
+#[derive(Debug, Clone)]
+pub struct PostSearchParams {
+    /// Search query text
+    pub query: String,
+
+    /// Pagination cursor
+    pub cursor: Option<String>,
+
+    /// Number of results to return (default 25, max 100)
+    pub limit: u32,
+
+    /// Sort order for results
+    pub sort: PostSearchSort,
+}
+
+impl Default for PostSearchParams {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            cursor: None,
+            limit: 25,
+            sort: PostSearchSort::default(),
+        }
+    }
+}
+
+impl PostSearchParams {
+    /// Create new search params with query
+    pub fn new(query: impl Into<String>) -> Self {
+        Self {
+            query: query.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Set sort order
+    pub fn with_sort(mut self, sort: PostSearchSort) -> Self {
+        self.sort = sort;
+        self
+    }
+
+    /// Set limit
+    pub fn with_limit(mut self, limit: u32) -> Self {
+        self.limit = limit;
+        self
+    }
+
+    /// Set cursor
+    pub fn with_cursor(mut self, cursor: Option<String>) -> Self {
+        self.cursor = cursor;
+        self
+    }
+
+    /// Check if query contains a user filter (from:username)
+    pub fn has_user_filter(&self) -> bool {
+        self.query.contains("from:")
+    }
+
+    /// Extract user handle from query if present
+    ///
+    /// Extracts the handle from queries like "from:alice.bsky.social something"
+    pub fn extract_user_filter(&self) -> Option<String> {
+        // Simple regex-like extraction for from:handle
+        if let Some(start) = self.query.find("from:") {
+            let after_from = &self.query[start + 5..];
+            // Extract until space or end
+            let handle = after_from
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim();
+
+            if !handle.is_empty() {
+                return Some(handle.to_string());
+            }
+        }
+        None
+    }
+}
+
+/// Response from post search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostSearchResponse {
+    /// Search results
+    pub posts: Vec<PostView>,
+
+    /// Pagination cursor for next page
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+
+    /// Number of hits (may not match posts.len() due to filtering)
+    #[serde(rename = "hitsTotal", skip_serializing_if = "Option::is_none")]
+    pub hits_total: Option<u32>,
+}
+
+/// Post search service
+pub struct PostSearchService {
+    client: Arc<RwLock<XrpcClient>>,
+}
+
+impl PostSearchService {
+    /// Create a new post search service
+    pub fn new(client: Arc<RwLock<XrpcClient>>) -> Self {
+        Self { client }
+    }
+
+    /// Search for posts by content
+    ///
+    /// This provides paginated search results with full post information.
+    /// Supports sorting by relevance (top) or recency (latest).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::search::{PostSearchService, PostSearchParams, PostSearchSort};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let search = PostSearchService::new(client);
+    /// let params = PostSearchParams::new("rust programming")
+    ///     .with_sort(PostSearchSort::Latest)
+    ///     .with_limit(25);
+    /// let results = search.search_posts(params).await?;
+    /// for post in results.posts {
+    ///     println!("@{}: {}", post.author.handle, post.uri);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn search_posts(&self, params: PostSearchParams) -> Result<PostSearchResponse> {
+        if params.query.trim().is_empty() {
+            return Err(SearchError::InvalidQuery(
+                "Query cannot be empty".to_string(),
+            ));
+        }
+
+        let client = self.client.read().await;
+
+        let mut request = atproto_client::XrpcRequest::query("app.bsky.feed.searchPosts")
+            .param("q", params.query.trim())
+            .param("limit", params.limit.to_string())
+            .param("sort", params.sort.as_str());
+
+        if let Some(cursor) = params.cursor {
+            request = request.param("cursor", cursor);
+        }
+
+        let response = client
+            .query(request)
+            .await
+            .map_err(|e| SearchError::ApiError(e.to_string()))?;
+
+        let search_response: PostSearchResponse = serde_json::from_value(response.data)
+            .map_err(SearchError::ParseError)?;
+
+        Ok(search_response)
+    }
+
+    /// Search for posts with automatic pagination
+    ///
+    /// Fetches multiple pages until the desired number of results is reached
+    /// or no more results are available.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::search::{PostSearchService, PostSearchParams};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let search = PostSearchService::new(client);
+    /// let params = PostSearchParams::new("bluesky");
+    /// let posts = search.search_posts_paginated(params, 100).await?;
+    /// println!("Found {} posts", posts.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn search_posts_paginated(
+        &self,
+        mut params: PostSearchParams,
+        max_results: usize,
+    ) -> Result<Vec<PostView>> {
+        let mut all_posts = Vec::new();
+        let mut cursor = None;
+
+        while all_posts.len() < max_results {
+            params.cursor = cursor.clone();
+            let response = self.search_posts(params.clone()).await?;
+
+            if response.posts.is_empty() {
+                break;
+            }
+
+            all_posts.extend(response.posts);
+
+            match response.cursor {
+                Some(c) => cursor = Some(c),
+                None => break,
+            }
+        }
+
+        all_posts.truncate(max_results);
+        Ok(all_posts)
+    }
+
+    /// Search for posts from a specific user
+    ///
+    /// This is a convenience method that adds the "from:" filter to the query.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::search::{PostSearchService, PostSearchParams};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let search = PostSearchService::new(client);
+    /// let results = search.search_posts_by_user("alice.bsky.social", "rust").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn search_posts_by_user(
+        &self,
+        handle: &str,
+        query: &str,
+    ) -> Result<PostSearchResponse> {
+        let params = PostSearchParams::new(format!("from:{} {}", handle, query));
+        self.search_posts(params).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,5 +697,134 @@ mod tests {
 
         let json = serde_json::to_string(&response).unwrap();
         let _deserialized: ActorTypeaheadResponse = serde_json::from_str(&json).unwrap();
+    }
+
+    // Post search tests
+
+    #[test]
+    fn test_post_search_sort_as_str() {
+        assert_eq!(PostSearchSort::Top.as_str(), "top");
+        assert_eq!(PostSearchSort::Latest.as_str(), "latest");
+    }
+
+    #[test]
+    fn test_post_search_sort_default() {
+        assert_eq!(PostSearchSort::default(), PostSearchSort::Top);
+    }
+
+    #[test]
+    fn test_post_search_params_default() {
+        let params = PostSearchParams::default();
+        assert_eq!(params.query, "");
+        assert_eq!(params.cursor, None);
+        assert_eq!(params.limit, 25);
+        assert_eq!(params.sort, PostSearchSort::Top);
+    }
+
+    #[test]
+    fn test_post_search_params_new() {
+        let params = PostSearchParams::new("test query");
+        assert_eq!(params.query, "test query");
+        assert_eq!(params.limit, 25);
+        assert_eq!(params.sort, PostSearchSort::Top);
+    }
+
+    #[test]
+    fn test_post_search_params_builder() {
+        let params = PostSearchParams::new("test")
+            .with_sort(PostSearchSort::Latest)
+            .with_limit(50)
+            .with_cursor(Some("cursor123".to_string()));
+
+        assert_eq!(params.query, "test");
+        assert_eq!(params.sort, PostSearchSort::Latest);
+        assert_eq!(params.limit, 50);
+        assert_eq!(params.cursor, Some("cursor123".to_string()));
+    }
+
+    #[test]
+    fn test_post_search_params_has_user_filter() {
+        let params1 = PostSearchParams::new("from:alice.bsky.social rust");
+        assert!(params1.has_user_filter());
+
+        let params2 = PostSearchParams::new("rust programming");
+        assert!(!params2.has_user_filter());
+    }
+
+    #[test]
+    fn test_post_search_params_extract_user_filter() {
+        let params1 = PostSearchParams::new("from:alice.bsky.social rust programming");
+        assert_eq!(
+            params1.extract_user_filter(),
+            Some("alice.bsky.social".to_string())
+        );
+
+        let params2 = PostSearchParams::new("from:bob.test");
+        assert_eq!(params2.extract_user_filter(), Some("bob.test".to_string()));
+
+        let params3 = PostSearchParams::new("rust programming");
+        assert_eq!(params3.extract_user_filter(), None);
+
+        let params4 = PostSearchParams::new("from: invalid");
+        assert_eq!(params4.extract_user_filter(), Some("invalid".to_string()));
+    }
+
+    #[test]
+    fn test_post_search_params_extract_user_filter_at_end() {
+        let params = PostSearchParams::new("rust from:alice.bsky.social");
+        assert_eq!(
+            params.extract_user_filter(),
+            Some("alice.bsky.social".to_string())
+        );
+    }
+
+    #[test]
+    fn test_post_search_params_extract_user_filter_only() {
+        let params = PostSearchParams::new("from:alice.bsky.social");
+        assert_eq!(
+            params.extract_user_filter(),
+            Some("alice.bsky.social".to_string())
+        );
+    }
+
+    #[test]
+    fn test_post_search_response_serialization() {
+        let response = PostSearchResponse {
+            posts: vec![],
+            cursor: Some("next-page".to_string()),
+            hits_total: Some(100),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: PostSearchResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.cursor, Some("next-page".to_string()));
+        assert_eq!(deserialized.hits_total, Some(100));
+    }
+
+    #[test]
+    fn test_post_search_response_no_hits_total() {
+        let response = PostSearchResponse {
+            posts: vec![],
+            cursor: None,
+            hits_total: None,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        // hitsTotal should not be in JSON when None
+        assert!(!json.contains("hitsTotal"));
+    }
+
+    #[test]
+    fn test_post_search_response_no_cursor() {
+        let response = PostSearchResponse {
+            posts: vec![],
+            cursor: None,
+            hits_total: Some(10),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        // cursor should not be in JSON when None
+        assert!(!json.contains("cursor"));
+        assert!(json.contains("hitsTotal"));
     }
 }

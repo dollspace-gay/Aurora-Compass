@@ -33,7 +33,10 @@
       "Bash(findstr:*)",
       "Bash(bd close Aurora-Compass-m97 --reason \"Completed: AT Protocol SDK is fully implemented with 60 passing doc tests and 17 integration tests. All core features working: XRPC, Lexicon, session management, JWT handling, BskyAgent\")",
       "Bash(bd close Aurora-Compass-50b --reason \"Completed: Storage layer fully implemented with 64 passing unit tests. Features: SQLite database, sled KV store, tiered cache, AppPersistedState, persistence framework with migration support\")",
-      "Bash(bd close:*)"
+      "Bash(bd close:*)",
+      "Bash(git remote remove:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
