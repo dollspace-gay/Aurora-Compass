@@ -816,6 +816,365 @@ pub fn format_relative_time(timestamp: &DateTime<Utc>) -> String {
     }
 }
 
+// ============================================================================
+// Real-time Message Events
+// ============================================================================
+
+/// Type of message event
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MessageEventType {
+    /// A new message was received
+    NewMessage,
+    /// A message was deleted
+    MessageDeleted,
+    /// Conversation metadata was updated
+    ConversationUpdated,
+    /// A new conversation was created
+    ConversationCreated,
+    /// Conversation was marked as read
+    ConversationRead,
+    /// Someone is typing
+    TypingIndicator,
+}
+
+/// Message event payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageEvent {
+    /// Type of event
+    pub event_type: MessageEventType,
+    /// Conversation ID
+    pub conversation_id: String,
+    /// Optional message (for NewMessage events)
+    pub message: Option<Message>,
+    /// Optional typing indicator data
+    pub typing: Option<TypingIndicator>,
+    /// Event timestamp
+    pub timestamp: DateTime<Utc>,
+}
+
+impl MessageEvent {
+    /// Create a new message event
+    pub fn new(event_type: MessageEventType, conversation_id: impl Into<String>) -> Self {
+        Self {
+            event_type,
+            conversation_id: conversation_id.into(),
+            message: None,
+            typing: None,
+            timestamp: Utc::now(),
+        }
+    }
+
+    /// Create a new message event with message data
+    pub fn with_message(
+        mut self,
+        message: Message,
+    ) -> Self {
+        self.message = Some(message);
+        self
+    }
+
+    /// Create a new message event with typing data
+    pub fn with_typing(
+        mut self,
+        typing: TypingIndicator,
+    ) -> Self {
+        self.typing = Some(typing);
+        self
+    }
+}
+
+/// Typing indicator data
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypingIndicator {
+    /// User who is typing
+    pub user_did: String,
+    /// Whether user is currently typing
+    pub is_typing: bool,
+}
+
+/// Connection mode for event listening
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionMode {
+    /// Use polling-based connection
+    Polling,
+    /// Use WebSocket connection (not yet implemented)
+    WebSocket,
+}
+
+/// Configuration for event listener
+#[derive(Debug, Clone)]
+pub struct EventListenerConfig {
+    /// Connection mode
+    pub mode: ConnectionMode,
+    /// Polling interval (for polling mode)
+    pub poll_interval: std::time::Duration,
+    /// Whether to enable typing indicators
+    pub enable_typing: bool,
+    /// Event buffer size
+    pub buffer_size: usize,
+}
+
+impl Default for EventListenerConfig {
+    fn default() -> Self {
+        Self {
+            mode: ConnectionMode::Polling,
+            poll_interval: std::time::Duration::from_secs(5),
+            enable_typing: false,
+            buffer_size: 100,
+        }
+    }
+}
+
+/// Message event listener for real-time updates
+///
+/// Manages connections to receive real-time message events and
+/// distributes them to subscribers via a broadcast channel.
+pub struct MessageEventListener {
+    client: Arc<RwLock<XrpcClient>>,
+    config: EventListenerConfig,
+    event_tx: tokio::sync::broadcast::Sender<MessageEvent>,
+    running: Arc<RwLock<bool>>,
+    last_cursor: Arc<RwLock<Option<String>>>,
+}
+
+impl MessageEventListener {
+    /// Create a new message event listener
+    ///
+    /// # Arguments
+    ///
+    /// * `client` - XRPC client for making requests
+    /// * `config` - Event listener configuration
+    ///
+    /// # Returns
+    ///
+    /// A new `MessageEventListener` instance
+    pub fn new(client: Arc<RwLock<XrpcClient>>, config: EventListenerConfig) -> Self {
+        let (event_tx, _) = tokio::sync::broadcast::channel(config.buffer_size);
+
+        Self {
+            client,
+            config,
+            event_tx,
+            running: Arc::new(RwLock::new(false)),
+            last_cursor: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Subscribe to message events
+    ///
+    /// # Returns
+    ///
+    /// A broadcast receiver for message events
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<MessageEvent> {
+        self.event_tx.subscribe()
+    }
+
+    /// Check if the listener is currently running
+    ///
+    /// # Returns
+    ///
+    /// True if listener is running, false otherwise
+    pub async fn is_running(&self) -> bool {
+        *self.running.read().await
+    }
+
+    /// Start listening for events
+    ///
+    /// Spawns a background task that continuously polls for new events
+    /// and broadcasts them to subscribers.
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or error
+    pub async fn start(&self) -> Result<()> {
+        let mut running = self.running.write().await;
+        if *running {
+            return Ok(()); // Already running
+        }
+        *running = true;
+        drop(running);
+
+        match self.config.mode {
+            ConnectionMode::Polling => self.start_polling().await,
+            ConnectionMode::WebSocket => {
+                Err(MessageError::Xrpc("WebSocket mode not yet implemented".to_string()))
+            }
+        }
+    }
+
+    /// Start polling-based event listening
+    async fn start_polling(&self) -> Result<()> {
+        let client = Arc::clone(&self.client);
+        let running = Arc::clone(&self.running);
+        let last_cursor = Arc::clone(&self.last_cursor);
+        let event_tx = self.event_tx.clone();
+        let poll_interval = self.config.poll_interval;
+
+        tokio::spawn(async move {
+            while *running.read().await {
+                // Poll for new messages
+                if let Ok(events) = Self::poll_events(&client, &last_cursor).await {
+                    for event in events {
+                        let _ = event_tx.send(event);
+                    }
+                }
+
+                tokio::time::sleep(poll_interval).await;
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Poll for new events
+    async fn poll_events(
+        client: &Arc<RwLock<XrpcClient>>,
+        last_cursor: &Arc<RwLock<Option<String>>>,
+    ) -> Result<Vec<MessageEvent>> {
+        let cursor = last_cursor.read().await.clone();
+
+        let client_guard = client.read().await;
+        let mut request = XrpcRequest::query("chat.bsky.convo.listConvos");
+
+        if let Some(cursor_val) = cursor {
+            request = request.param("cursor", cursor_val);
+        }
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct ConvoListResponse {
+            convos: Vec<Conversation>,
+            cursor: Option<String>,
+        }
+
+        let response = client_guard
+            .query::<ConvoListResponse>(request)
+            .await
+            .map_err(|e| MessageError::Xrpc(e.to_string()))?;
+
+        // Update cursor for next poll
+        if let Some(new_cursor) = response.data.cursor {
+            *last_cursor.write().await = Some(new_cursor);
+        }
+
+        // Convert conversations to events
+        let mut events = Vec::new();
+        for convo in response.data.convos {
+            // Check if this is a new conversation or updated one
+            if let Some(last_message) = convo.last_message {
+                let event = MessageEvent::new(
+                    MessageEventType::NewMessage,
+                    convo.id.clone(),
+                )
+                .with_message(Message {
+                    id: last_message.id,
+                    text: last_message.text,
+                    sender: MessageSender {
+                        did: last_message.sender.did,
+                        handle: last_message.sender.handle,
+                        display_name: last_message.sender.display_name,
+                        avatar: last_message.sender.avatar,
+                    },
+                    sent_at: last_message.sent_at,
+                    is_from_self: None,
+                });
+                events.push(event);
+            }
+        }
+
+        Ok(events)
+    }
+
+    /// Stop listening for events
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or error
+    pub async fn stop(&self) -> Result<()> {
+        let mut running = self.running.write().await;
+        *running = false;
+        Ok(())
+    }
+
+    /// Reset the polling cursor
+    ///
+    /// This will cause the next poll to fetch from the beginning
+    pub async fn reset_cursor(&self) {
+        *self.last_cursor.write().await = None;
+    }
+}
+
+impl Clone for MessageEventListener {
+    fn clone(&self) -> Self {
+        Self {
+            client: Arc::clone(&self.client),
+            config: self.config.clone(),
+            event_tx: self.event_tx.clone(),
+            running: Arc::clone(&self.running),
+            last_cursor: Arc::clone(&self.last_cursor),
+        }
+    }
+}
+
+/// Extension trait for InboxView to integrate with event listener
+pub trait InboxViewExt {
+    /// Apply a message event to the inbox
+    ///
+    /// Updates conversations based on incoming events
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - The message event to apply
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or error
+    fn apply_event(&mut self, event: &MessageEvent) -> Result<()>;
+}
+
+impl InboxViewExt for InboxView {
+    fn apply_event(&mut self, event: &MessageEvent) -> Result<()> {
+        match event.event_type {
+            MessageEventType::NewMessage => {
+                // Find the conversation and update it
+                if let Some(convo) = self.conversations.iter_mut()
+                    .find(|c| c.id == event.conversation_id)
+                {
+                    if let Some(ref message) = event.message {
+                        convo.last_message = Some(message.clone());
+                        convo.updated_at = message.sent_at;
+                        convo.unread_count += 1;
+                    }
+                }
+            }
+            MessageEventType::ConversationRead => {
+                // Mark conversation as read
+                if let Some(convo) = self.conversations.iter_mut()
+                    .find(|c| c.id == event.conversation_id)
+                {
+                    convo.unread_count = 0;
+                }
+            }
+            MessageEventType::ConversationUpdated => {
+                // Update conversation metadata (would need more details in event)
+            }
+            MessageEventType::ConversationCreated => {
+                // Would need full conversation data in event to add new conversation
+            }
+            MessageEventType::MessageDeleted => {
+                // Handle message deletion (would need message ID in event)
+            }
+            MessageEventType::TypingIndicator => {
+                // Handle typing indicator (UI concern, no state change needed)
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1370,5 +1729,297 @@ mod tests {
         assert_eq!(ConversationSortBy::Recent, ConversationSortBy::Recent);
         assert_ne!(ConversationSortBy::Recent, ConversationSortBy::Unread);
         assert_ne!(ConversationSortBy::Unread, ConversationSortBy::Name);
+    }
+
+    // Event system tests
+    #[test]
+    fn test_message_event_type_variants() {
+        assert_eq!(MessageEventType::NewMessage, MessageEventType::NewMessage);
+        assert_ne!(MessageEventType::NewMessage, MessageEventType::MessageDeleted);
+        assert_ne!(MessageEventType::ConversationUpdated, MessageEventType::TypingIndicator);
+    }
+
+    #[test]
+    fn test_message_event_creation() {
+        let event = MessageEvent::new(MessageEventType::NewMessage, "convo123");
+
+        assert_eq!(event.event_type, MessageEventType::NewMessage);
+        assert_eq!(event.conversation_id, "convo123");
+        assert!(event.message.is_none());
+        assert!(event.typing.is_none());
+    }
+
+    #[test]
+    fn test_message_event_with_message() {
+        let sender = MessageSender {
+            did: "did:plc:test".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            display_name: Some("Alice".to_string()),
+            avatar: None,
+        };
+
+        let message = Message::new("msg1", "Hello", sender, Utc::now());
+
+        let event = MessageEvent::new(MessageEventType::NewMessage, "convo123")
+            .with_message(message.clone());
+
+        assert_eq!(event.event_type, MessageEventType::NewMessage);
+        assert!(event.message.is_some());
+        assert_eq!(event.message.as_ref().unwrap().text, "Hello");
+    }
+
+    #[test]
+    fn test_message_event_with_typing() {
+        let typing = TypingIndicator {
+            user_did: "did:plc:test".to_string(),
+            is_typing: true,
+        };
+
+        let event = MessageEvent::new(MessageEventType::TypingIndicator, "convo123")
+            .with_typing(typing.clone());
+
+        assert_eq!(event.event_type, MessageEventType::TypingIndicator);
+        assert!(event.typing.is_some());
+        assert!(event.typing.as_ref().unwrap().is_typing);
+    }
+
+    #[test]
+    fn test_typing_indicator_creation() {
+        let typing = TypingIndicator {
+            user_did: "did:plc:test123".to_string(),
+            is_typing: true,
+        };
+
+        assert_eq!(typing.user_did, "did:plc:test123");
+        assert!(typing.is_typing);
+
+        let not_typing = TypingIndicator {
+            user_did: "did:plc:test456".to_string(),
+            is_typing: false,
+        };
+
+        assert!(!not_typing.is_typing);
+    }
+
+    #[test]
+    fn test_connection_mode_variants() {
+        assert_eq!(ConnectionMode::Polling, ConnectionMode::Polling);
+        assert_ne!(ConnectionMode::Polling, ConnectionMode::WebSocket);
+    }
+
+    #[test]
+    fn test_event_listener_config_default() {
+        let config = EventListenerConfig::default();
+
+        assert_eq!(config.mode, ConnectionMode::Polling);
+        assert_eq!(config.poll_interval, std::time::Duration::from_secs(5));
+        assert!(!config.enable_typing);
+        assert_eq!(config.buffer_size, 100);
+    }
+
+    #[test]
+    fn test_event_listener_config_custom() {
+        let config = EventListenerConfig {
+            mode: ConnectionMode::Polling,
+            poll_interval: std::time::Duration::from_secs(10),
+            enable_typing: true,
+            buffer_size: 200,
+        };
+
+        assert_eq!(config.mode, ConnectionMode::Polling);
+        assert_eq!(config.poll_interval, std::time::Duration::from_secs(10));
+        assert!(config.enable_typing);
+        assert_eq!(config.buffer_size, 200);
+    }
+
+    #[tokio::test]
+    async fn test_message_event_listener_creation() {
+        use atproto_client::xrpc::XrpcClientConfig;
+
+        let config_xrpc = XrpcClientConfig::new("https://bsky.social");
+        let client = Arc::new(RwLock::new(XrpcClient::new(config_xrpc)));
+        let config = EventListenerConfig::default();
+
+        let listener = MessageEventListener::new(client, config);
+
+        assert!(!listener.is_running().await);
+    }
+
+    #[tokio::test]
+    async fn test_message_event_listener_subscribe() {
+        use atproto_client::xrpc::XrpcClientConfig;
+
+        let config_xrpc = XrpcClientConfig::new("https://bsky.social");
+        let client = Arc::new(RwLock::new(XrpcClient::new(config_xrpc)));
+        let config = EventListenerConfig::default();
+
+        let listener = MessageEventListener::new(client, config);
+
+        let _rx = listener.subscribe();
+        // Just verify we can subscribe
+    }
+
+    #[tokio::test]
+    async fn test_message_event_listener_clone() {
+        use atproto_client::xrpc::XrpcClientConfig;
+
+        let config_xrpc = XrpcClientConfig::new("https://bsky.social");
+        let client = Arc::new(RwLock::new(XrpcClient::new(config_xrpc)));
+        let config = EventListenerConfig::default();
+
+        let listener = MessageEventListener::new(client, config);
+        let listener2 = listener.clone();
+
+        assert_eq!(listener.is_running().await, listener2.is_running().await);
+    }
+
+    #[tokio::test]
+    async fn test_message_event_listener_reset_cursor() {
+        use atproto_client::xrpc::XrpcClientConfig;
+
+        let config_xrpc = XrpcClientConfig::new("https://bsky.social");
+        let client = Arc::new(RwLock::new(XrpcClient::new(config_xrpc)));
+        let config = EventListenerConfig::default();
+
+        let listener = MessageEventListener::new(client, config);
+
+        listener.reset_cursor().await;
+        // Just verify the method runs without error
+    }
+
+    #[tokio::test]
+    async fn test_inbox_view_apply_new_message_event() {
+        let sender = MessageSender {
+            did: "did:plc:alice".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            display_name: Some("Alice".to_string()),
+            avatar: None,
+        };
+
+        let mut inbox = InboxView::new(vec![
+            Conversation::new("convo1", vec![sender.clone()])
+        ]);
+
+        let message = Message::new("msg1", "Hello", sender, Utc::now());
+        let event = MessageEvent::new(MessageEventType::NewMessage, "convo1")
+            .with_message(message.clone());
+
+        inbox.apply_event(&event).unwrap();
+
+        // Verify the conversation was updated
+        assert_eq!(inbox.conversations[0].unread_count, 1);
+        assert!(inbox.conversations[0].last_message.is_some());
+        assert_eq!(inbox.conversations[0].last_message.as_ref().unwrap().text, "Hello");
+    }
+
+    #[tokio::test]
+    async fn test_inbox_view_apply_read_event() {
+        let sender = MessageSender {
+            did: "did:plc:alice".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            display_name: Some("Alice".to_string()),
+            avatar: None,
+        };
+
+        let mut conversation = Conversation::new("convo1", vec![sender]);
+        conversation.unread_count = 5;
+
+        let mut inbox = InboxView::new(vec![conversation]);
+
+        let event = MessageEvent::new(MessageEventType::ConversationRead, "convo1");
+        inbox.apply_event(&event).unwrap();
+
+        // Verify the conversation was marked as read
+        assert_eq!(inbox.conversations[0].unread_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_inbox_view_apply_event_nonexistent_conversation() {
+        let sender = MessageSender {
+            did: "did:plc:alice".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            display_name: Some("Alice".to_string()),
+            avatar: None,
+        };
+
+        let mut inbox = InboxView::new(vec![
+            Conversation::new("convo1", vec![sender.clone()])
+        ]);
+
+        let message = Message::new("msg1", "Hello", sender, Utc::now());
+        let event = MessageEvent::new(MessageEventType::NewMessage, "convo999")
+            .with_message(message);
+
+        // Should not error, just no-op for nonexistent conversation
+        inbox.apply_event(&event).unwrap();
+
+        // Original conversation should be unchanged
+        assert_eq!(inbox.conversations[0].unread_count, 0);
+        assert!(inbox.conversations[0].last_message.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_inbox_view_apply_typing_event() {
+        let sender = MessageSender {
+            did: "did:plc:alice".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            display_name: Some("Alice".to_string()),
+            avatar: None,
+        };
+
+        let mut inbox = InboxView::new(vec![
+            Conversation::new("convo1", vec![sender])
+        ]);
+
+        let typing = TypingIndicator {
+            user_did: "did:plc:alice".to_string(),
+            is_typing: true,
+        };
+
+        let event = MessageEvent::new(MessageEventType::TypingIndicator, "convo1")
+            .with_typing(typing);
+
+        // Should not error or modify state (typing is UI concern)
+        inbox.apply_event(&event).unwrap();
+    }
+
+    #[test]
+    fn test_message_event_serde() {
+        let sender = MessageSender {
+            did: "did:plc:test".to_string(),
+            handle: "test.bsky.social".to_string(),
+            display_name: None,
+            avatar: None,
+        };
+
+        let message = Message::new("msg1", "Test", sender, Utc::now());
+        let event = MessageEvent::new(MessageEventType::NewMessage, "convo1")
+            .with_message(message);
+
+        // Test serialization
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("newMessage"));
+        assert!(json.contains("convo1"));
+
+        // Test deserialization
+        let deserialized: MessageEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.event_type, MessageEventType::NewMessage);
+        assert_eq!(deserialized.conversation_id, "convo1");
+    }
+
+    #[test]
+    fn test_typing_indicator_serde() {
+        let typing = TypingIndicator {
+            user_did: "did:plc:test".to_string(),
+            is_typing: true,
+        };
+
+        let json = serde_json::to_string(&typing).unwrap();
+        assert!(json.contains("did:plc:test"));
+        assert!(json.contains("true"));
+
+        let deserialized: TypingIndicator = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.user_did, "did:plc:test");
+        assert!(deserialized.is_typing);
     }
 }
