@@ -121,5 +121,12 @@ src/locale/locales/**/*.js
 bskyogcard/src/assets/fonts/noto-*
 src/state/session/agent.ts
 src/view/com/posts/PostFeedReason.tsx
-.gitignore
-.gitignore
+
+# Rust
+/target/
+Cargo.lock
+*.rs.bk
+*.pdb
+
+# Original codebase (archived)
+original-bluesky/

@@ -1,0 +1,23 @@
+[package]
+name = "app-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Internal dependencies
+atproto-client = { path = "../atproto-client" }
+app-state = { path = "../app-state" }
+storage = { path = "../storage" }
+moderation = { path = "../moderation" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }

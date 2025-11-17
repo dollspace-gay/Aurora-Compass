@@ -1,0 +1,18 @@
+[package]
+name = "app-ui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Internal dependencies
+app-core = { path = "../app-core" }
+app-state = { path = "../app-state" }
+i18n = { path = "../i18n" }
+
+[dev-dependencies]
+# UI framework specific tests will be added

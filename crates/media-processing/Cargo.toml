@@ -1,0 +1,17 @@
+[package]
+name = "media-processing"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+# Image processing
+image = "0.25"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }

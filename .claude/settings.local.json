@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bd --help:*)",
+      "Bash(bd info:*)",
+      "Bash(bd init:*)",
+      "Bash(bd epic --help:*)",
+      "Bash(bd create --help:*)",
+      "Bash(bd create:*)",
+      "Bash(bd dep --help:*)",
+      "Bash(bd dep add --help:*)",
+      "Bash(bd dep add:*)",
+      "Bash(bd status:*)",
+      "Bash(bd ready:*)",
+      "Bash(bd list:*)",
+      "Bash(bd epic status:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(bd update:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

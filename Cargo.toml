@@ -1,0 +1,58 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/atproto-client",
+    "crates/app-core",
+    "crates/app-state",
+    "crates/app-ui",
+    "crates/app-platform",
+    "crates/media-processing",
+    "crates/moderation",
+    "crates/networking",
+    "crates/storage",
+    "crates/i18n",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Aurora Compass Team"]
+license = "MIT"
+repository = "https://github.com/yourusername/aurora-compass"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.41", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Testing
+mockall = "0.13"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.test]
+opt-level = 0
+debug = true
