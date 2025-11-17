@@ -10,6 +10,7 @@ pub mod cache;
 pub mod database;
 pub mod kv;
 pub mod persistence;
+pub mod sync;
 
 pub use database::{
     Database, DatabaseConfig, DatabaseError, DatabaseTransaction, MigrationDefinition,
@@ -21,4 +22,7 @@ pub use kv::{
 pub use cache::{CacheConfig, CacheError, DiskCache, MemoryCache, TieredCache};
 pub use persistence::{
     MigratableState, PersistedState, PersistenceConfig, PersistenceError, StateMigration,
+};
+pub use sync::{
+    ConflictStrategy, NetworkState, StateSync, SyncConfig, SyncError, UpdateEvent,
 };
