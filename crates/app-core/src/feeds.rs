@@ -529,6 +529,326 @@ impl Default for FeedTuner {
     }
 }
 
+/// Feed generator view (custom algorithm feed)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GeneratorView {
+    /// URI of the feed generator
+    pub uri: String,
+
+    /// CID of the feed generator record
+    pub cid: String,
+
+    /// DID of the creator
+    pub did: String,
+
+    /// Creator profile
+    pub creator: ProfileViewBasic,
+
+    /// Display name of the feed
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+
+    /// Description of the feed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Description facets (links, mentions, etc.)
+    #[serde(rename = "descriptionFacets", skip_serializing_if = "Option::is_none")]
+    pub description_facets: Option<Vec<serde_json::Value>>,
+
+    /// Avatar image URL
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<String>,
+
+    /// Number of likes
+    #[serde(rename = "likeCount", skip_serializing_if = "Option::is_none")]
+    pub like_count: Option<u32>,
+
+    /// Whether this feed accepts interactions
+    #[serde(rename = "acceptsInteractions", skip_serializing_if = "Option::is_none")]
+    pub accepts_interactions: Option<bool>,
+
+    /// Labels applied to the feed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<Vec<Label>>,
+
+    /// Viewer state for this feed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewer: Option<GeneratorViewerState>,
+
+    /// When the feed was indexed
+    #[serde(rename = "indexedAt")]
+    pub indexed_at: String,
+}
+
+/// Viewer state for a feed generator
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GeneratorViewerState {
+    /// URI of viewer's like if they liked this feed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub like: Option<String>,
+}
+
+/// Feed preferences
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeedPreferences {
+    /// User's language preferences for content
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_languages: Option<Vec<String>>,
+
+    /// User's interests/topics
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interests: Option<Vec<String>>,
+}
+
+impl FeedPreferences {
+    /// Create preferences with content languages
+    pub fn with_languages(languages: Vec<String>) -> Self {
+        Self {
+            content_languages: Some(languages),
+            interests: None,
+        }
+    }
+
+    /// Create preferences with interests
+    pub fn with_interests(interests: Vec<String>) -> Self {
+        Self {
+            content_languages: None,
+            interests: Some(interests),
+        }
+    }
+
+    /// Get content languages as a comma-separated string
+    pub fn content_languages_header(&self) -> String {
+        self.content_languages
+            .as_ref()
+            .map(|langs| langs.join(","))
+            .unwrap_or_default()
+    }
+
+    /// Get interests as a comma-separated string
+    pub fn interests_header(&self) -> String {
+        self.interests
+            .as_ref()
+            .map(|interests| interests.join(","))
+            .unwrap_or_default()
+    }
+}
+
+/// Custom feed (algorithm feed) service
+pub struct CustomFeed {
+    client: Arc<RwLock<XrpcClient>>,
+    feed_uri: String,
+    preferences: FeedPreferences,
+}
+
+impl CustomFeed {
+    /// Create a new custom feed service
+    ///
+    /// # Arguments
+    ///
+    /// * `client` - XRPC client for API requests
+    /// * `feed_uri` - AT URI of the feed generator
+    /// * `preferences` - Feed preferences (languages, interests)
+    pub fn new(
+        client: Arc<RwLock<XrpcClient>>,
+        feed_uri: impl Into<String>,
+        preferences: FeedPreferences,
+    ) -> Self {
+        Self {
+            client,
+            feed_uri: feed_uri.into(),
+            preferences,
+        }
+    }
+
+    /// Fetch posts from the custom feed
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::feeds::{CustomFeed, FeedParams, FeedPreferences};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let preferences = FeedPreferences::with_languages(vec!["en".to_string()]);
+    /// let feed = CustomFeed::new(
+    ///     client,
+    ///     "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.generator/whats-hot",
+    ///     preferences,
+    /// );
+    /// let params = FeedParams {
+    ///     cursor: None,
+    ///     limit: 50,
+    /// };
+    /// let response = feed.fetch(params).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn fetch(&self, params: FeedParams) -> Result<FeedResponse> {
+        let client = self.client.read().await;
+
+        let mut request = atproto_client::XrpcRequest::query("app.bsky.feed.getFeed")
+            .param("feed", &self.feed_uri)
+            .param("limit", params.limit.to_string());
+
+        if let Some(cursor) = params.cursor {
+            request = request.param("cursor", cursor);
+        }
+
+        // Add language preferences
+        let content_langs = self.preferences.content_languages_header();
+        if !content_langs.is_empty() {
+            request = request.header("Accept-Language", content_langs);
+        }
+
+        // Add interests header for Bluesky-owned feeds
+        let interests = self.preferences.interests_header();
+        if !interests.is_empty() && self.is_bluesky_owned() {
+            request = request.header("X-Bsky-Topics", interests);
+        }
+
+        let response = client
+            .query(request)
+            .await
+            .map_err(|e| FeedError::ApiError(e.to_string()))?;
+
+        let mut feed_response: FeedResponse = serde_json::from_value(response.data)
+            .map_err(FeedError::ParseError)?;
+
+        // Some custom feeds fail to enforce pagination limits, so truncate manually
+        if feed_response.feed.len() > params.limit as usize {
+            feed_response.feed.truncate(params.limit as usize);
+        }
+
+        // Clear cursor if feed is empty
+        if feed_response.feed.is_empty() {
+            feed_response.cursor = None;
+        }
+
+        Ok(feed_response)
+    }
+
+    /// Peek at the latest post in the feed
+    pub async fn peek_latest(&self) -> Result<Option<FeedViewPost>> {
+        let params = FeedParams {
+            cursor: None,
+            limit: 1,
+        };
+
+        let response = self.fetch(params).await?;
+        Ok(response.feed.into_iter().next())
+    }
+
+    /// Check if this feed is owned by Bluesky
+    ///
+    /// Bluesky-owned feeds receive special treatment like the X-Bsky-Topics header
+    fn is_bluesky_owned(&self) -> bool {
+        // Known Bluesky feed owner DIDs
+        const BLUESKY_FEED_OWNERS: &[&str] = &[
+            "did:plc:z72i7hdynmk6r22z27h6tvur", // bsky.app
+            "did:plc:q6gjnaw2blty4crticxkmujt", // other official feeds
+        ];
+
+        // Parse the feed URI to extract the DID
+        if let Some(did_end) = self.feed_uri.find("/app.bsky.feed.generator/") {
+            let did_start = self.feed_uri.find("did:").unwrap_or(0);
+            let did = &self.feed_uri[did_start..did_end];
+            BLUESKY_FEED_OWNERS.contains(&did)
+        } else {
+            false
+        }
+    }
+
+    /// Get the feed URI
+    pub fn uri(&self) -> &str {
+        &self.feed_uri
+    }
+}
+
+/// Get feed generator information
+pub struct FeedGeneratorService {
+    client: Arc<RwLock<XrpcClient>>,
+}
+
+impl FeedGeneratorService {
+    /// Create a new feed generator service
+    pub fn new(client: Arc<RwLock<XrpcClient>>) -> Self {
+        Self { client }
+    }
+
+    /// Get information about a feed generator
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::feeds::FeedGeneratorService;
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let service = FeedGeneratorService::new(client);
+    /// let generator = service.get_feed_generator(
+    ///     "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.generator/whats-hot"
+    /// ).await?;
+    /// println!("Feed: {}", generator.display_name);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_feed_generator(&self, uri: &str) -> Result<GeneratorView> {
+        let client = self.client.read().await;
+
+        let request = atproto_client::XrpcRequest::query("app.bsky.feed.getFeedGenerator")
+            .param("feed", uri);
+
+        let response = client
+            .query(request)
+            .await
+            .map_err(|e| FeedError::ApiError(e.to_string()))?;
+
+        #[derive(Deserialize)]
+        struct GetFeedGeneratorResponse {
+            view: GeneratorView,
+        }
+
+        let generator_response: GetFeedGeneratorResponse = serde_json::from_value(response.data)
+            .map_err(FeedError::ParseError)?;
+
+        Ok(generator_response.view)
+    }
+
+    /// Get multiple feed generators in a single request
+    pub async fn get_feed_generators(&self, uris: &[String]) -> Result<Vec<GeneratorView>> {
+        let client = self.client.read().await;
+
+        let mut request = atproto_client::XrpcRequest::query("app.bsky.feed.getFeedGenerators");
+
+        for uri in uris {
+            request = request.param("feeds", uri);
+        }
+
+        let response = client
+            .query(request)
+            .await
+            .map_err(|e| FeedError::ApiError(e.to_string()))?;
+
+        #[derive(Deserialize)]
+        struct GetFeedGeneratorsResponse {
+            feeds: Vec<GeneratorView>,
+        }
+
+        let generators_response: GetFeedGeneratorsResponse = serde_json::from_value(response.data)
+            .map_err(FeedError::ParseError)?;
+
+        Ok(generators_response.feeds)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -709,5 +1029,118 @@ mod tests {
 
         let _nf: ReplyRefPost = serde_json::from_str(&nf_json).unwrap();
         let _b: ReplyRefPost = serde_json::from_str(&b_json).unwrap();
+    }
+
+    #[test]
+    fn test_feed_preferences_languages() {
+        let prefs = FeedPreferences::with_languages(vec!["en".to_string(), "es".to_string()]);
+        assert_eq!(prefs.content_languages_header(), "en,es");
+        assert!(prefs.interests.is_none());
+    }
+
+    #[test]
+    fn test_feed_preferences_interests() {
+        let prefs = FeedPreferences::with_interests(vec!["tech".to_string(), "sports".to_string()]);
+        assert_eq!(prefs.interests_header(), "tech,sports");
+        assert!(prefs.content_languages.is_none());
+    }
+
+    #[test]
+    fn test_feed_preferences_default() {
+        let prefs = FeedPreferences::default();
+        assert_eq!(prefs.content_languages_header(), "");
+        assert_eq!(prefs.interests_header(), "");
+    }
+
+    #[test]
+    fn test_generator_view_serialization() {
+        let generator = GeneratorView {
+            uri: "at://did:plc:abc/app.bsky.feed.generator/test".to_string(),
+            cid: "test-cid".to_string(),
+            did: "did:plc:abc".to_string(),
+            creator: ProfileViewBasic {
+                did: "did:plc:abc".to_string(),
+                handle: "user.bsky.social".to_string(),
+                display_name: Some("User".to_string()),
+                avatar: None,
+                associated: None,
+                viewer: None,
+                labels: None,
+                created_at: None,
+            },
+            display_name: "Test Feed".to_string(),
+            description: Some("A test feed".to_string()),
+            description_facets: None,
+            avatar: Some("https://example.com/avatar.jpg".to_string()),
+            like_count: Some(100),
+            accepts_interactions: Some(true),
+            labels: None,
+            viewer: Some(GeneratorViewerState {
+                like: Some("at://did:plc:abc/app.bsky.feed.like/123".to_string()),
+            }),
+            indexed_at: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        let json = serde_json::to_string(&generator).unwrap();
+        let deserialized: GeneratorView = serde_json::from_str(&json).unwrap();
+        assert_eq!(generator, deserialized);
+        assert!(json.contains("displayName"));
+        assert!(json.contains("Test Feed"));
+    }
+
+    #[test]
+    fn test_generator_viewer_state() {
+        let viewer_state = GeneratorViewerState {
+            like: Some("at://did:plc:abc/app.bsky.feed.like/123".to_string()),
+        };
+
+        let json = serde_json::to_string(&viewer_state).unwrap();
+        let deserialized: GeneratorViewerState = serde_json::from_str(&json).unwrap();
+        assert_eq!(viewer_state, deserialized);
+    }
+
+    #[test]
+    fn test_custom_feed_is_bluesky_owned() {
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+        use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+
+        let config = XrpcClientConfig::default();
+        let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+
+        // Bluesky-owned feed
+        let bluesky_feed = CustomFeed::new(
+            client.clone(),
+            "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.generator/whats-hot",
+            FeedPreferences::default(),
+        );
+        assert!(bluesky_feed.is_bluesky_owned());
+
+        // Non-Bluesky feed
+        let custom_feed = CustomFeed::new(
+            client,
+            "at://did:plc:abc123/app.bsky.feed.generator/my-feed",
+            FeedPreferences::default(),
+        );
+        assert!(!custom_feed.is_bluesky_owned());
+    }
+
+    #[test]
+    fn test_custom_feed_uri() {
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+        use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+
+        let config = XrpcClientConfig::default();
+        let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+        let feed_uri = "at://did:plc:abc/app.bsky.feed.generator/test";
+
+        let feed = CustomFeed::new(
+            client,
+            feed_uri,
+            FeedPreferences::default(),
+        );
+
+        assert_eq!(feed.uri(), feed_uri);
     }
 }
