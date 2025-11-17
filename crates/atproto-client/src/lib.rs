@@ -7,6 +7,7 @@
 #![warn(clippy::all)]
 
 pub mod agent;
+pub mod cid;
 pub mod lexicon;
 pub mod session;
 pub mod types;
