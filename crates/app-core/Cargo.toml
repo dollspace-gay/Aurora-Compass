@@ -13,6 +13,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 regex = "1.10"
+unicode-segmentation = "1.11"
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
