@@ -19,5 +19,8 @@ sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
 # Key-value store
 sled = "0.34"
 
+# Migration checksums
+md5 = "0.7"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

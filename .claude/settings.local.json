@@ -25,7 +25,8 @@
       "Bash(bd comment:*)",
       "Bash(nul)",
       "Bash(cargo fix:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(cargo clippy:*)"
     ],
     "deny": [],
     "ask": []

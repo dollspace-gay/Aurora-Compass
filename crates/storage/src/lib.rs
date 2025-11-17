@@ -10,3 +10,8 @@ pub mod cache;
 pub mod database;
 pub mod kv;
 pub mod persistence;
+
+pub use database::{
+    Database, DatabaseConfig, DatabaseError, DatabaseTransaction, MigrationDefinition,
+    SqliteDatabase, SynchronousMode,
+};
