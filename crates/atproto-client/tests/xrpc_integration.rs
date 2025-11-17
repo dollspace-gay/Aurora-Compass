@@ -121,7 +121,7 @@ async fn test_request_with_custom_headers() {
         .and(path("/xrpc/com.example.getQuery"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_json(&TestQuery { name: "test".to_string(), value: 1 }),
+                .set_body_json(TestQuery { name: "test".to_string(), value: 1 }),
         )
         .mount(&mock_server)
         .await;
@@ -149,7 +149,7 @@ async fn test_404_not_found() {
 
     Mock::given(method("GET"))
         .and(path("/xrpc/com.example.notFound"))
-        .respond_with(ResponseTemplate::new(404).set_body_json(&serde_json::json!({
+        .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
             "error": "NotFound",
             "message": "Record not found"
         })))
@@ -175,7 +175,7 @@ async fn test_400_bad_request() {
 
     Mock::given(method("POST"))
         .and(path("/xrpc/com.example.invalid"))
-        .respond_with(ResponseTemplate::new(400).set_body_json(&serde_json::json!({
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
             "error": "InvalidRequest",
             "message": "Missing required field"
         })))
@@ -200,7 +200,7 @@ async fn test_500_server_error() {
 
     Mock::given(method("GET"))
         .and(path("/xrpc/com.example.serverError"))
-        .respond_with(ResponseTemplate::new(500).set_body_json(&serde_json::json!({
+        .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({
             "error": "InternalServerError",
             "message": "Something went wrong"
         })))
@@ -226,7 +226,7 @@ async fn test_503_service_unavailable() {
 
     Mock::given(method("GET"))
         .and(path("/xrpc/com.example.unavailable"))
-        .respond_with(ResponseTemplate::new(503).set_body_json(&serde_json::json!({
+        .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
             "error": "ServiceUnavailable",
             "message": "Service temporarily unavailable"
         })))
@@ -259,7 +259,7 @@ async fn test_retry_on_network_error_success() {
     // First request fails with 503
     Mock::given(method("GET"))
         .and(path("/xrpc/com.example.retry"))
-        .respond_with(ResponseTemplate::new(503).set_body_json(&serde_json::json!({
+        .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
             "error": "ServiceUnavailable",
             "message": "Temporarily unavailable"
         })))
@@ -291,7 +291,7 @@ async fn test_retry_exhausted() {
     // All requests fail with 503
     Mock::given(method("GET"))
         .and(path("/xrpc/com.example.alwaysFails"))
-        .respond_with(ResponseTemplate::new(503).set_body_json(&serde_json::json!({
+        .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
             "error": "ServiceUnavailable",
             "message": "Always fails"
         })))
@@ -318,7 +318,7 @@ async fn test_no_retry_on_application_error() {
     Mock::given(method("POST"))
         .and(path("/xrpc/com.example.badRequest"))
         .respond_with(
-            ResponseTemplate::new(400).set_body_json(&serde_json::json!({
+            ResponseTemplate::new(400).set_body_json(serde_json::json!({
                 "error": "InvalidRequest",
                 "message": "Bad input"
             })),
@@ -352,7 +352,7 @@ async fn test_response_headers() {
         .and(path("/xrpc/com.example.withHeaders"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_json(&TestQuery { name: "test".to_string(), value: 1 })
+                .set_body_json(TestQuery { name: "test".to_string(), value: 1 })
                 .insert_header("X-Custom-Header", "custom-value")
                 .insert_header("X-Request-Id", "req-123"),
         )
@@ -414,7 +414,7 @@ async fn test_empty_response_body() {
     // Return 200 with empty JSON object
     Mock::given(method("GET"))
         .and(path("/xrpc/com.example.empty"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
         .mount(&mock_server)
         .await;
 

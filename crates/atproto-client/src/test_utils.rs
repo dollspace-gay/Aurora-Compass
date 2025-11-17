@@ -3,7 +3,6 @@
 //! This module provides common test helpers, mock data generators,
 //! and fixtures for testing AT Protocol functionality.
 
-#![cfg(test)]
 #![allow(dead_code)] // Test utilities may not all be used yet
 
 use crate::types::{AtUri, Did, Handle, StrongRef, Tid};

@@ -654,8 +654,8 @@ mod tests {
         assert_eq!(deserialized.did, "did:plc:abc123");
         assert_eq!(deserialized.handle, "alice.bsky.social");
         assert_eq!(deserialized.email, Some("alice@example.com".to_string()));
-        assert_eq!(deserialized.email_confirmed, true);
-        assert_eq!(deserialized.two_factor_enabled, false);
+        assert!(deserialized.email_confirmed);
+        assert!(!deserialized.two_factor_enabled);
     }
 
     #[tokio::test]

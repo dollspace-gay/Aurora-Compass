@@ -200,7 +200,7 @@ impl SessionManager {
     pub async fn new_in_memory() -> Result<Self> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().map_err(|e| PersistenceError::Io(e))?;
+        let temp_dir = TempDir::new().map_err(PersistenceError::Io)?;
         let path = temp_dir.path().join("test_sessions.json");
 
         // Keep temp_dir alive by leaking it (for tests only)

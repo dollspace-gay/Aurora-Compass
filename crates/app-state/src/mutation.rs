@@ -305,6 +305,7 @@ mod tests {
     }
 
     #[derive(Clone)]
+    #[allow(dead_code)]
     struct TestQuery {
         key: QueryKey,
         data: TestData,
@@ -323,9 +324,10 @@ mod tests {
         }
 
         fn config(&self) -> QueryConfig {
-            let mut config = QueryConfig::default();
-            config.stale_time = std::time::Duration::from_secs(60);
-            config
+            QueryConfig {
+                stale_time: std::time::Duration::from_secs(60),
+                ..Default::default()
+            }
         }
     }
 
