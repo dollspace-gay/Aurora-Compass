@@ -14,4 +14,5 @@ pub mod messages;
 pub mod notifications;
 pub mod posts;
 pub mod profiles;
+pub mod search;
 pub mod threads;
