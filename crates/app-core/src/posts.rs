@@ -4,6 +4,7 @@
 //! rich text parsing with facets for links, mentions, and hashtags, and
 //! reply handling for threaded conversations.
 
+use atproto_client::lexicon::BlobRef;
 use atproto_client::xrpc::{XrpcClient, XrpcRequest};
 use chrono::Utc;
 use regex::Regex;
@@ -326,6 +327,56 @@ impl ReplyRef {
     }
 }
 
+/// Aspect ratio for images
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AspectRatio {
+    /// Width
+    pub width: u32,
+    /// Height
+    pub height: u32,
+}
+
+/// Image in an embed
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedImage {
+    /// Blob reference to the image
+    pub image: BlobRef,
+    /// Alt text for accessibility
+    pub alt: String,
+    /// Aspect ratio
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aspect_ratio: Option<AspectRatio>,
+}
+
+/// Images embed (up to 4 images)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImagesEmbed {
+    /// The images
+    pub images: Vec<EmbedImage>,
+    /// Embed type
+    #[serde(rename = "$type")]
+    pub embed_type: String,
+}
+
+impl ImagesEmbed {
+    /// Create a new images embed
+    pub fn new(images: Vec<EmbedImage>) -> Self {
+        Self {
+            images,
+            embed_type: "app.bsky.embed.images".to_string(),
+        }
+    }
+}
+
+/// Main embed union type
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Embed {
+    /// Images embed
+    Images(ImagesEmbed),
+}
+
 /// Reply error types
 #[derive(Debug, Error)]
 pub enum ReplyError {
@@ -375,6 +426,12 @@ pub struct PostRecord {
     /// Optional facets
     #[serde(skip_serializing_if = "Option::is_none")]
     pub facets: Option<Vec<Facet>>,
+    /// Optional embed (images, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embed: Option<Embed>,
+    /// Optional language tags (BCP-47 language codes)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub langs: Option<Vec<String>>,
     /// Record type
     #[serde(rename = "$type")]
     pub record_type: String,
@@ -465,6 +522,8 @@ impl ReplyComposer {
             created_at: now,
             reply: Some(reply_ref.clone()),
             facets: text.facets.clone(),
+            embed: None,
+            langs: None,
             record_type: "app.bsky.feed.post".to_string(),
         };
 
@@ -529,6 +588,284 @@ impl ReplyComposer {
         } else {
             format!("Replying to {} (in thread {})", reply_ref.parent_uri(), reply_ref.root_uri())
         }
+    }
+}
+
+/// Post composer error types
+#[derive(Debug, Error)]
+pub enum PostError {
+    /// XRPC error
+    #[error("XRPC error: {0}")]
+    Xrpc(String),
+
+    /// No session
+    #[error("No active session")]
+    NoSession,
+
+    /// Serialization error
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    /// Text too long
+    #[error("Text exceeds maximum length of {max} characters (got {actual})")]
+    TextTooLong {
+        /// Actual text length
+        actual: usize,
+        /// Maximum allowed length
+        max: usize,
+    },
+
+    /// Too many images
+    #[error("Too many images: {count} (maximum is 4)")]
+    TooManyImages {
+        /// Number of images
+        count: usize,
+    },
+
+    /// Image processing error
+    #[error("Image processing error: {0}")]
+    ImageError(String),
+
+    /// Invalid language code
+    #[error("Invalid language code: {0}")]
+    InvalidLanguage(String),
+
+    /// Empty post
+    #[error("Post cannot be empty (no text and no images)")]
+    EmptyPost,
+}
+
+/// Result type for post operations
+pub type PostResult<T> = std::result::Result<T, PostError>;
+
+/// Maximum post text length (grapheme count)
+pub const MAX_POST_LENGTH: usize = 300;
+
+/// Maximum number of images per post
+pub const MAX_IMAGES_PER_POST: usize = 4;
+
+/// Post composer for creating posts
+///
+/// Provides methods for composing and creating posts with text, images, and metadata.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use app_core::posts::{PostComposer, RichText};
+/// use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     // Create XRPC client (with auth)
+///     let config = XrpcClientConfig::new("https://bsky.social");
+///     let client = XrpcClient::new(config);
+///     let composer = PostComposer::new(client);
+///
+///     // Create a post with text
+///     let mut text = RichText::new("Hello Bluesky! #introduction");
+///     text.detect_facets();
+///
+///     let (uri, cid) = composer.create_post(&text).await?;
+///     println!("Created post: {} ({})", uri, cid);
+///
+///     Ok(())
+/// }
+/// ```
+pub struct PostComposer {
+    /// XRPC client
+    client: Arc<RwLock<XrpcClient>>,
+}
+
+impl PostComposer {
+    /// Create a new post composer
+    pub fn new(client: XrpcClient) -> Self {
+        Self {
+            client: Arc::new(RwLock::new(client)),
+        }
+    }
+
+    /// Create a post with text only
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The post text with facets
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (uri, cid) for the created post
+    ///
+    /// # Errors
+    ///
+    /// - `PostError::EmptyPost` - Text is empty
+    /// - `PostError::TextTooLong` - Text exceeds 300 graphemes
+    /// - `PostError::NoSession` - No active session
+    /// - `PostError::Xrpc` - XRPC error
+    pub async fn create_post(&self, text: &RichText) -> PostResult<(String, String)> {
+        self.create_post_with_options(text, None, None).await
+    }
+
+    /// Create a post with text and images
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The post text with facets
+    /// * `images` - Image embeds (up to 4)
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (uri, cid) for the created post
+    ///
+    /// # Errors
+    ///
+    /// - `PostError::TooManyImages` - More than 4 images
+    /// - `PostError::TextTooLong` - Text exceeds 300 graphemes
+    /// - `PostError::NoSession` - No active session
+    /// - `PostError::Xrpc` - XRPC error
+    pub async fn create_post_with_images(
+        &self,
+        text: &RichText,
+        images: Vec<EmbedImage>,
+    ) -> PostResult<(String, String)> {
+        if images.len() > MAX_IMAGES_PER_POST {
+            return Err(PostError::TooManyImages { count: images.len() });
+        }
+
+        let embed = if !images.is_empty() {
+            Some(Embed::Images(ImagesEmbed::new(images)))
+        } else {
+            None
+        };
+
+        self.create_post_with_options(text, embed, None).await
+    }
+
+    /// Create a post with full options
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The post text with facets
+    /// * `embed` - Optional embed (images, etc.)
+    /// * `langs` - Optional language codes (BCP-47 format, e.g., ["en", "es"])
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (uri, cid) for the created post
+    ///
+    /// # Errors
+    ///
+    /// - `PostError::EmptyPost` - No text and no embed
+    /// - `PostError::TextTooLong` - Text exceeds 300 graphemes
+    /// - `PostError::NoSession` - No active session
+    /// - `PostError::Xrpc` - XRPC error
+    pub async fn create_post_with_options(
+        &self,
+        text: &RichText,
+        embed: Option<Embed>,
+        langs: Option<Vec<String>>,
+    ) -> PostResult<(String, String)> {
+        // Validate text length using grapheme count
+        let grapheme_count = unicode_segmentation::UnicodeSegmentation::graphemes(
+            text.text.as_str(),
+            true,
+        )
+        .count();
+
+        if grapheme_count > MAX_POST_LENGTH {
+            return Err(PostError::TextTooLong {
+                actual: grapheme_count,
+                max: MAX_POST_LENGTH,
+            });
+        }
+
+        // Check that post has content
+        if text.text.is_empty() && embed.is_none() {
+            return Err(PostError::EmptyPost);
+        }
+
+        let now = Utc::now().to_rfc3339();
+
+        let record = PostRecord {
+            text: text.text.clone(),
+            created_at: now,
+            reply: None,
+            facets: text.facets.clone(),
+            embed,
+            langs,
+            record_type: "app.bsky.feed.post".to_string(),
+        };
+
+        let body = serde_json::json!({
+            "repo": "self",
+            "collection": "app.bsky.feed.post",
+            "record": record,
+        });
+
+        let request = XrpcRequest::procedure("com.atproto.repo.createRecord")
+            .json_body(&body)
+            .map_err(|e| PostError::Xrpc(e.to_string()))?;
+
+        let client = self.client.read().await;
+        let response = client
+            .procedure(request)
+            .await
+            .map_err(|e| PostError::Xrpc(e.to_string()))?;
+
+        let create_response: CreatePostResponse =
+            serde_json::from_value(response.data).map_err(PostError::Serialization)?;
+
+        Ok((create_response.uri, create_response.cid))
+    }
+
+    /// Create a simple text post (convenience method)
+    ///
+    /// This method automatically detects facets in the text
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - Plain text for the post
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (uri, cid) for the created post
+    pub async fn post_text(&self, text: impl Into<String>) -> PostResult<(String, String)> {
+        let mut rich_text = RichText::new(text);
+        rich_text.detect_facets();
+        self.create_post(&rich_text).await
+    }
+
+    /// Create a post with language specified
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - Plain text for the post
+    /// * `langs` - Language codes (BCP-47 format, e.g., vec!["en", "es"])
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (uri, cid) for the created post
+    pub async fn post_text_with_langs(
+        &self,
+        text: impl Into<String>,
+        langs: Vec<String>,
+    ) -> PostResult<(String, String)> {
+        let mut rich_text = RichText::new(text);
+        rich_text.detect_facets();
+        self.create_post_with_options(&rich_text, None, Some(langs))
+            .await
+    }
+
+    /// Validate text length
+    ///
+    /// Returns the grapheme count and whether it's within limits
+    pub fn validate_text_length(text: &str) -> (usize, bool) {
+        let count = unicode_segmentation::UnicodeSegmentation::graphemes(text, true).count();
+        (count, count <= MAX_POST_LENGTH)
+    }
+
+    /// Get remaining characters for a given text
+    pub fn chars_remaining(text: &str) -> i32 {
+        let count = unicode_segmentation::UnicodeSegmentation::graphemes(text, true).count();
+        MAX_POST_LENGTH as i32 - count as i32
     }
 }
 
@@ -752,6 +1089,8 @@ mod tests {
             created_at: "2024-01-01T00:00:00Z".to_string(),
             reply: Some(reply_ref.clone()),
             facets: None,
+            embed: None,
+            langs: None,
             record_type: "app.bsky.feed.post".to_string(),
         };
 
@@ -773,6 +1112,8 @@ mod tests {
             created_at: "2024-01-01T00:00:00Z".to_string(),
             reply: None,
             facets: None,
+            embed: None,
+            langs: None,
             record_type: "app.bsky.feed.post".to_string(),
         };
 
@@ -817,5 +1158,253 @@ mod tests {
         assert!(thread_context.contains("in thread"));
         assert!(thread_context.contains("parent"));
         assert!(thread_context.contains("root"));
+    }
+
+    #[test]
+    fn test_aspect_ratio() {
+        let ratio = AspectRatio {
+            width: 1920,
+            height: 1080,
+        };
+        assert_eq!(ratio.width, 1920);
+        assert_eq!(ratio.height, 1080);
+    }
+
+    #[test]
+    fn test_embed_image() {
+        let blob_ref = BlobRef::new("image/jpeg", 500000, "bafytest123");
+
+        let embed_image = EmbedImage {
+            image: blob_ref.clone(),
+            alt: "Test image".to_string(),
+            aspect_ratio: Some(AspectRatio {
+                width: 1920,
+                height: 1080,
+            }),
+        };
+
+        assert_eq!(embed_image.alt, "Test image");
+        assert_eq!(embed_image.image.mime_type, "image/jpeg");
+        assert!(embed_image.aspect_ratio.is_some());
+    }
+
+    #[test]
+    fn test_images_embed() {
+        let blob_ref = BlobRef::new("image/jpeg", 500000, "bafytest123");
+
+        let embed_image = EmbedImage {
+            image: blob_ref,
+            alt: "Test image".to_string(),
+            aspect_ratio: None,
+        };
+
+        let images_embed = ImagesEmbed::new(vec![embed_image]);
+        assert_eq!(images_embed.images.len(), 1);
+        assert_eq!(images_embed.embed_type, "app.bsky.embed.images");
+    }
+
+    #[test]
+    fn test_images_embed_serialization() {
+        let blob_ref = BlobRef::new("image/jpeg", 500000, "bafytest123");
+
+        let embed_image = EmbedImage {
+            image: blob_ref,
+            alt: "Test alt text".to_string(),
+            aspect_ratio: Some(AspectRatio {
+                width: 1000,
+                height: 500,
+            }),
+        };
+
+        let images_embed = ImagesEmbed::new(vec![embed_image]);
+        let json = serde_json::to_string(&images_embed).unwrap();
+
+        assert!(json.contains("app.bsky.embed.images"));
+        assert!(json.contains("Test alt text"));
+        assert!(json.contains("bafytest123"));
+    }
+
+    #[test]
+    fn test_post_record_with_embed() {
+        let blob_ref = BlobRef::new("image/jpeg", 500000, "bafytest123");
+
+        let embed_image = EmbedImage {
+            image: blob_ref,
+            alt: "Test".to_string(),
+            aspect_ratio: None,
+        };
+
+        let embed = Embed::Images(ImagesEmbed::new(vec![embed_image]));
+
+        let record = PostRecord {
+            text: "Check out this image!".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            reply: None,
+            facets: None,
+            embed: Some(embed),
+            langs: None,
+            record_type: "app.bsky.feed.post".to_string(),
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(json.contains("Check out this image!"));
+        assert!(json.contains("embed"));
+        assert!(json.contains("app.bsky.embed.images"));
+    }
+
+    #[test]
+    fn test_post_record_with_langs() {
+        let record = PostRecord {
+            text: "Hello world!".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            reply: None,
+            facets: None,
+            embed: None,
+            langs: Some(vec!["en".to_string(), "es".to_string()]),
+            record_type: "app.bsky.feed.post".to_string(),
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(json.contains("langs"));
+        assert!(json.contains("en"));
+        assert!(json.contains("es"));
+    }
+
+    #[test]
+    fn test_post_composer_validate_text_length() {
+        let short_text = "Hello world";
+        let (count, valid) = PostComposer::validate_text_length(short_text);
+        assert_eq!(count, 11);
+        assert!(valid);
+
+        // Test with exactly 300 characters
+        let max_text = "a".repeat(300);
+        let (count, valid) = PostComposer::validate_text_length(&max_text);
+        assert_eq!(count, 300);
+        assert!(valid);
+
+        // Test with > 300 characters
+        let too_long_text = "a".repeat(301);
+        let (count, valid) = PostComposer::validate_text_length(&too_long_text);
+        assert_eq!(count, 301);
+        assert!(!valid);
+    }
+
+    #[test]
+    fn test_post_composer_validate_text_length_unicode() {
+        // Test with emojis (each emoji counts as 1 grapheme)
+        let emoji_text = "Hello 👋 World 🌍";
+        let (count, valid) = PostComposer::validate_text_length(emoji_text);
+        assert_eq!(count, 15); // H e l l o space 👋 space W o r l d space 🌍
+        assert!(valid);
+    }
+
+    #[test]
+    fn test_post_composer_chars_remaining() {
+        let text = "Hello world";
+        let remaining = PostComposer::chars_remaining(text);
+        assert_eq!(remaining, 289); // 300 - 11
+
+        let max_text = "a".repeat(300);
+        let remaining = PostComposer::chars_remaining(&max_text);
+        assert_eq!(remaining, 0);
+
+        let too_long = "a".repeat(301);
+        let remaining = PostComposer::chars_remaining(&too_long);
+        assert_eq!(remaining, -1);
+    }
+
+    #[test]
+    fn test_post_error_display() {
+        let err = PostError::TextTooLong {
+            actual: 350,
+            max: 300,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("350"));
+        assert!(msg.contains("300"));
+
+        let err = PostError::TooManyImages { count: 5 };
+        let msg = err.to_string();
+        assert!(msg.contains("5"));
+        assert!(msg.contains("4"));
+
+        let err = PostError::EmptyPost;
+        let msg = err.to_string();
+        assert!(msg.contains("empty"));
+    }
+
+    #[test]
+    fn test_max_post_length_constant() {
+        assert_eq!(MAX_POST_LENGTH, 300);
+    }
+
+    #[test]
+    fn test_max_images_per_post_constant() {
+        assert_eq!(MAX_IMAGES_PER_POST, 4);
+    }
+
+    #[test]
+    fn test_post_composer_creation() {
+        use atproto_client::xrpc::XrpcClientConfig;
+
+        let config = XrpcClientConfig::new("https://bsky.social");
+        let client = XrpcClient::new(config);
+        let _composer = PostComposer::new(client);
+        // Just testing that it creates successfully
+    }
+
+    #[test]
+    fn test_embed_image_without_aspect_ratio() {
+        let blob_ref = BlobRef::new("image/png", 250000, "bafytest");
+
+        let embed_image = EmbedImage {
+            image: blob_ref,
+            alt: String::new(),
+            aspect_ratio: None,
+        };
+
+        let json = serde_json::to_string(&embed_image).unwrap();
+        assert!(!json.contains("aspectRatio"));
+    }
+
+    #[test]
+    fn test_post_record_skips_optional_fields() {
+        let record = PostRecord {
+            text: "Simple post".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            reply: None,
+            facets: None,
+            embed: None,
+            langs: None,
+            record_type: "app.bsky.feed.post".to_string(),
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(!json.contains("reply"));
+        assert!(!json.contains("facets"));
+        assert!(!json.contains("embed"));
+        assert!(!json.contains("langs"));
+        assert!(json.contains("Simple post"));
+    }
+
+    #[test]
+    fn test_multiple_images_embed() {
+        let images: Vec<EmbedImage> = (0..4)
+            .map(|i| EmbedImage {
+                image: BlobRef::new("image/jpeg", 500000, format!("bafytest{}", i)),
+                alt: format!("Image {}", i),
+                aspect_ratio: None,
+            })
+            .collect();
+
+        let images_embed = ImagesEmbed::new(images);
+        assert_eq!(images_embed.images.len(), 4);
+
+        let json = serde_json::to_string(&images_embed).unwrap();
+        assert!(json.contains("bafytest0"));
+        assert!(json.contains("bafytest3"));
+        assert!(json.contains("Image 0"));
+        assert!(json.contains("Image 3"));
     }
 }
