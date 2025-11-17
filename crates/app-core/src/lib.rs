@@ -9,6 +9,7 @@
 pub mod auth;
 pub mod branding;
 pub mod feeds;
+pub mod interactions;
 pub mod messages;
 pub mod notifications;
 pub mod posts;

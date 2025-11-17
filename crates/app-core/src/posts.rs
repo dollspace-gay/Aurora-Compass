@@ -1,12 +1,16 @@
 //! Post management and rich text parsing
 //!
 //! This module provides functionality for working with posts, including
-//! rich text parsing with facets for links, mentions, and hashtags.
+//! rich text parsing with facets for links, mentions, and hashtags, and
+//! reply handling for threaded conversations.
 
+use atproto_client::xrpc::{XrpcClient, XrpcRequest};
+use chrono::Utc;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 /// Rich text error types
 #[derive(Debug, Error)]
@@ -272,6 +276,294 @@ fn detect_tags(text: &str) -> Vec<Facet> {
     facets
 }
 
+/// Strong reference to a post (URI + CID)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StrongRef {
+    /// URI of the post
+    pub uri: String,
+    /// CID of the post
+    pub cid: String,
+}
+
+/// Reply reference containing root and parent posts
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplyRef {
+    /// Reference to the root post of the thread
+    pub root: StrongRef,
+    /// Reference to the immediate parent post
+    pub parent: StrongRef,
+}
+
+impl ReplyRef {
+    /// Create a reply reference for replying to a top-level post
+    ///
+    /// When replying to a top-level post, root and parent are the same
+    pub fn to_post(uri: impl Into<String>, cid: impl Into<String>) -> Self {
+        let strong_ref = StrongRef {
+            uri: uri.into(),
+            cid: cid.into(),
+        };
+
+        Self {
+            root: strong_ref.clone(),
+            parent: strong_ref,
+        }
+    }
+
+    /// Create a reply reference for replying within a thread
+    ///
+    /// # Arguments
+    ///
+    /// * `root_uri` - URI of the root post
+    /// * `root_cid` - CID of the root post
+    /// * `parent_uri` - URI of the immediate parent post
+    /// * `parent_cid` - CID of the immediate parent post
+    pub fn in_thread(
+        root_uri: impl Into<String>,
+        root_cid: impl Into<String>,
+        parent_uri: impl Into<String>,
+        parent_cid: impl Into<String>,
+    ) -> Self {
+        Self {
+            root: StrongRef {
+                uri: root_uri.into(),
+                cid: root_cid.into(),
+            },
+            parent: StrongRef {
+                uri: parent_uri.into(),
+                cid: parent_cid.into(),
+            },
+        }
+    }
+
+    /// Check if this is a reply to a top-level post
+    pub fn is_top_level_reply(&self) -> bool {
+        self.root.uri == self.parent.uri && self.root.cid == self.parent.cid
+    }
+
+    /// Get the root post URI
+    pub fn root_uri(&self) -> &str {
+        &self.root.uri
+    }
+
+    /// Get the parent post URI
+    pub fn parent_uri(&self) -> &str {
+        &self.parent.uri
+    }
+}
+
+/// Reply error types
+#[derive(Debug, Error)]
+pub enum ReplyError {
+    /// XRPC error
+    #[error("XRPC error: {0}")]
+    Xrpc(String),
+
+    /// Post not found
+    #[error("Post not found: {0}")]
+    NotFound(String),
+
+    /// No session
+    #[error("No active session")]
+    NoSession,
+
+    /// Serialization error
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    /// Invalid URI
+    #[error("Invalid URI: {0}")]
+    InvalidUri(String),
+
+    /// Invalid CID
+    #[error("Invalid CID: {0}")]
+    InvalidCid(String),
+
+    /// Reply not allowed
+    #[error("Replies not allowed: {0}")]
+    NotAllowed(String),
+}
+
+/// Result type for reply operations
+pub type ReplyResult<T> = std::result::Result<T, ReplyError>;
+
+/// Post record for creating posts with replies
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostRecord {
+    /// Post text
+    pub text: String,
+    /// Created at timestamp
+    pub created_at: String,
+    /// Optional reply reference
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply: Option<ReplyRef>,
+    /// Optional facets
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub facets: Option<Vec<Facet>>,
+    /// Record type
+    #[serde(rename = "$type")]
+    pub record_type: String,
+}
+
+/// Response from creating a post
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreatePostResponse {
+    /// URI of the created post
+    pub uri: String,
+    /// CID of the created post
+    pub cid: String,
+}
+
+/// Reply composer for creating reply posts
+///
+/// Provides methods for composing and creating reply posts with proper
+/// parent and root references.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use app_core::posts::{ReplyComposer, ReplyRef, RichText};
+/// use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     // Create XRPC client (with auth)
+///     let config = XrpcClientConfig::new("https://bsky.social");
+///     let client = XrpcClient::new(config);
+///     let composer = ReplyComposer::new(client);
+///
+///     // Create a reply reference
+///     let reply_ref = ReplyRef::to_post(
+///         "at://did:plc:abc123/app.bsky.feed.post/xyz456",
+///         "bafytest123",
+///     );
+///
+///     // Compose and create a reply
+///     let mut text = RichText::new("This is a reply!");
+///     text.detect_facets();
+///
+///     let (uri, cid) = composer.create_reply(&text, &reply_ref).await?;
+///     println!("Created reply: {} ({})", uri, cid);
+///
+///     Ok(())
+/// }
+/// ```
+pub struct ReplyComposer {
+    /// XRPC client
+    client: Arc<RwLock<XrpcClient>>,
+}
+
+impl ReplyComposer {
+    /// Create a new reply composer
+    pub fn new(client: XrpcClient) -> Self {
+        Self {
+            client: Arc::new(RwLock::new(client)),
+        }
+    }
+
+    /// Create a reply post
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The reply text with facets
+    /// * `reply_ref` - Reference to the parent and root posts
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (uri, cid) for the created reply
+    ///
+    /// # Errors
+    ///
+    /// - `ReplyError::NoSession` - No active session
+    /// - `ReplyError::Xrpc` - XRPC error
+    pub async fn create_reply(
+        &self,
+        text: &RichText,
+        reply_ref: &ReplyRef,
+    ) -> ReplyResult<(String, String)> {
+        if text.text.is_empty() {
+            return Err(ReplyError::InvalidUri("Reply text cannot be empty".to_string()));
+        }
+
+        let now = Utc::now().to_rfc3339();
+
+        let record = PostRecord {
+            text: text.text.clone(),
+            created_at: now,
+            reply: Some(reply_ref.clone()),
+            facets: text.facets.clone(),
+            record_type: "app.bsky.feed.post".to_string(),
+        };
+
+        let body = serde_json::json!({
+            "repo": "self",
+            "collection": "app.bsky.feed.post",
+            "record": record,
+        });
+
+        let request = XrpcRequest::procedure("com.atproto.repo.createRecord")
+            .json_body(&body)
+            .map_err(|e| ReplyError::Xrpc(e.to_string()))?;
+
+        let client = self.client.read().await;
+        let response = client
+            .procedure(request)
+            .await
+            .map_err(|e| ReplyError::Xrpc(e.to_string()))?;
+
+        let create_response: CreatePostResponse = serde_json::from_value(response.data)
+            .map_err(ReplyError::Serialization)?;
+
+        Ok((create_response.uri, create_response.cid))
+    }
+
+    /// Create a simple text reply (convenience method)
+    ///
+    /// This method automatically detects facets in the text
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - Plain text for the reply
+    /// * `reply_ref` - Reference to the parent and root posts
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (uri, cid) for the created reply
+    pub async fn reply_with_text(
+        &self,
+        text: impl Into<String>,
+        reply_ref: &ReplyRef,
+    ) -> ReplyResult<(String, String)> {
+        let mut rich_text = RichText::new(text);
+        rich_text.detect_facets();
+        self.create_reply(&rich_text, reply_ref).await
+    }
+
+    /// Get thread context for displaying reply indicator
+    ///
+    /// Returns information about the post being replied to
+    ///
+    /// # Arguments
+    ///
+    /// * `reply_ref` - Reply reference
+    ///
+    /// # Returns
+    ///
+    /// Human-readable description of the reply context
+    pub fn get_reply_context(&self, reply_ref: &ReplyRef) -> String {
+        if reply_ref.is_top_level_reply() {
+            format!("Replying to {}", reply_ref.parent_uri())
+        } else {
+            format!(
+                "Replying to {} (in thread {})",
+                reply_ref.parent_uri(),
+                reply_ref.root_uri()
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,5 +732,142 @@ mod tests {
         let json = serde_json::to_string(&feature).unwrap();
         assert!(json.contains("app.bsky.richtext.facet#tag"));
         assert!(json.contains("awesome"));
+    }
+
+    #[test]
+    fn test_strong_ref() {
+        let strong_ref = StrongRef {
+            uri: "at://did:plc:test/app.bsky.feed.post/123".to_string(),
+            cid: "bafytest123".to_string(),
+        };
+
+        assert_eq!(strong_ref.uri, "at://did:plc:test/app.bsky.feed.post/123");
+        assert_eq!(strong_ref.cid, "bafytest123");
+    }
+
+    #[test]
+    fn test_reply_ref_to_post() {
+        let reply_ref = ReplyRef::to_post(
+            "at://did:plc:test/app.bsky.feed.post/123",
+            "bafytest123",
+        );
+
+        assert!(reply_ref.is_top_level_reply());
+        assert_eq!(reply_ref.root.uri, reply_ref.parent.uri);
+        assert_eq!(reply_ref.root.cid, reply_ref.parent.cid);
+        assert_eq!(reply_ref.root_uri(), "at://did:plc:test/app.bsky.feed.post/123");
+        assert_eq!(reply_ref.parent_uri(), "at://did:plc:test/app.bsky.feed.post/123");
+    }
+
+    #[test]
+    fn test_reply_ref_in_thread() {
+        let reply_ref = ReplyRef::in_thread(
+            "at://did:plc:test/app.bsky.feed.post/root",
+            "bafyroot",
+            "at://did:plc:test/app.bsky.feed.post/parent",
+            "bafyparent",
+        );
+
+        assert!(!reply_ref.is_top_level_reply());
+        assert_eq!(reply_ref.root.uri, "at://did:plc:test/app.bsky.feed.post/root");
+        assert_eq!(reply_ref.root.cid, "bafyroot");
+        assert_eq!(reply_ref.parent.uri, "at://did:plc:test/app.bsky.feed.post/parent");
+        assert_eq!(reply_ref.parent.cid, "bafyparent");
+        assert_eq!(reply_ref.root_uri(), "at://did:plc:test/app.bsky.feed.post/root");
+        assert_eq!(reply_ref.parent_uri(), "at://did:plc:test/app.bsky.feed.post/parent");
+    }
+
+    #[test]
+    fn test_reply_ref_serialization() {
+        let reply_ref = ReplyRef::to_post(
+            "at://did:plc:test/app.bsky.feed.post/123",
+            "bafytest123",
+        );
+
+        let json = serde_json::to_string(&reply_ref).unwrap();
+        let deserialized: ReplyRef = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized, reply_ref);
+    }
+
+    #[test]
+    fn test_post_record_with_reply() {
+        let reply_ref = ReplyRef::to_post(
+            "at://did:plc:test/app.bsky.feed.post/parent",
+            "bafyparent",
+        );
+
+        let record = PostRecord {
+            text: "This is a reply".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            reply: Some(reply_ref.clone()),
+            facets: None,
+            record_type: "app.bsky.feed.post".to_string(),
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(json.contains("This is a reply"));
+        assert!(json.contains("reply"));
+        assert!(json.contains("root"));
+        assert!(json.contains("parent"));
+        assert!(json.contains("bafyparent"));
+
+        let deserialized: PostRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, record);
+    }
+
+    #[test]
+    fn test_post_record_without_reply() {
+        let record = PostRecord {
+            text: "This is a top-level post".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            reply: None,
+            facets: None,
+            record_type: "app.bsky.feed.post".to_string(),
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(json.contains("This is a top-level post"));
+        assert!(!json.contains("reply"));
+    }
+
+    #[test]
+    fn test_create_post_response_deserialization() {
+        let json = r#"{"uri":"at://did:plc:test/app.bsky.feed.post/abc","cid":"bafytest"}"#;
+        let response: CreatePostResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.uri, "at://did:plc:test/app.bsky.feed.post/abc");
+        assert_eq!(response.cid, "bafytest");
+    }
+
+    #[test]
+    fn test_reply_composer_context() {
+        use atproto_client::xrpc::XrpcClientConfig;
+
+        let config = XrpcClientConfig::new("https://bsky.social");
+        let client = XrpcClient::new(config);
+        let composer = ReplyComposer::new(client);
+
+        // Top-level reply
+        let reply_ref = ReplyRef::to_post(
+            "at://did:plc:test/app.bsky.feed.post/123",
+            "bafytest123",
+        );
+        let context = composer.get_reply_context(&reply_ref);
+        assert!(context.contains("Replying to"));
+        assert!(context.contains("at://did:plc:test/app.bsky.feed.post/123"));
+
+        // Thread reply
+        let thread_reply_ref = ReplyRef::in_thread(
+            "at://did:plc:test/app.bsky.feed.post/root",
+            "bafyroot",
+            "at://did:plc:test/app.bsky.feed.post/parent",
+            "bafyparent",
+        );
+        let thread_context = composer.get_reply_context(&thread_reply_ref);
+        assert!(thread_context.contains("Replying to"));
+        assert!(thread_context.contains("in thread"));
+        assert!(thread_context.contains("parent"));
+        assert!(thread_context.contains("root"));
     }
 }
