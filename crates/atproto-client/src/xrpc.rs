@@ -911,6 +911,35 @@ impl XrpcClient {
         network_retry(max_retries, || self.procedure(request.clone())).await
     }
 
+    /// Set or update the authorization header
+    ///
+    /// This updates the default Authorization header for all subsequent requests.
+    /// Pass `None` to remove the authorization header.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    ///
+    /// let mut config = XrpcClientConfig::new("https://bsky.social");
+    /// let mut client = XrpcClient::new(config);
+    ///
+    /// // Set auth header
+    /// client.set_auth_header(Some("Bearer token123".to_string()));
+    ///
+    /// // Clear auth header
+    /// client.set_auth_header(None);
+    /// ```
+    pub fn set_auth_header(&mut self, auth: Option<String>) {
+        if let Some(token) = auth {
+            self.config
+                .default_headers
+                .insert("Authorization".to_string(), token);
+        } else {
+            self.config.default_headers.remove("Authorization");
+        }
+    }
+
     /// Execute an XRPC request
     async fn execute_request<T>(&self, request: XrpcRequest) -> Result<XrpcResponse<T>, XrpcError>
     where
