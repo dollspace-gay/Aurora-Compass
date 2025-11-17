@@ -66,9 +66,7 @@ pub use parsing::LexiconParseError;
 pub use resolution::{parse_ref, RefResolutionError, SchemaRegistry};
 
 // Re-export validation types (excluding Result to avoid ambiguity)
-pub use validation::{
-    validate_array_length, validate_integer, validate_string, ValidationError,
-};
+pub use validation::{validate_array_length, validate_integer, validate_string, ValidationError};
 
 // Re-export CBOR types (excluding Result to avoid ambiguity)
-pub use cbor::{encode_record, decode_record, CidLink, BlobRef, TypedRecord, CborError};
+pub use cbor::{decode_record, encode_record, BlobRef, CborError, CidLink, TypedRecord};

@@ -323,10 +323,7 @@ impl Default for ThreadParams {
 impl ThreadParams {
     /// Create new thread params with an anchor URI
     pub fn new(anchor: impl Into<String>) -> Self {
-        Self {
-            anchor: anchor.into(),
-            ..Default::default()
-        }
+        Self { anchor: anchor.into(), ..Default::default() }
     }
 
     /// Set the sort order
@@ -395,9 +392,7 @@ pub struct ThreadService {
 impl ThreadService {
     /// Create a new thread service
     pub fn new(client: XrpcClient) -> Self {
-        Self {
-            client: Arc::new(RwLock::new(client)),
-        }
+        Self { client: Arc::new(RwLock::new(client)) }
     }
 
     /// Get a post thread
@@ -424,12 +419,15 @@ impl ThreadService {
             .param("anchor", &params.anchor)
             .param("below", params.below.to_string())
             .param("branchingFactor", params.branching_factor.to_string())
-            .param("sort", match params.sort {
-                ThreadSortOrder::Oldest => "oldest",
-                ThreadSortOrder::Newest => "newest",
-                ThreadSortOrder::MostLikes => "most-likes",
-                ThreadSortOrder::Random => "random",
-            })
+            .param(
+                "sort",
+                match params.sort {
+                    ThreadSortOrder::Oldest => "oldest",
+                    ThreadSortOrder::Newest => "newest",
+                    ThreadSortOrder::MostLikes => "most-likes",
+                    ThreadSortOrder::Random => "random",
+                },
+            )
             .param("prioritizeFollowedUsers", params.prioritize_followed_users.to_string());
 
         let client = self.client.read().await;
@@ -438,8 +436,8 @@ impl ThreadService {
             .await
             .map_err(|e| ThreadError::Xrpc(e.to_string()))?;
 
-        let thread_response: ThreadResponse = serde_json::from_value(response.data)
-            .map_err(ThreadError::Serialization)?;
+        let thread_response: ThreadResponse =
+            serde_json::from_value(response.data).map_err(ThreadError::Serialization)?;
 
         Ok(thread_response)
     }
@@ -473,8 +471,8 @@ impl ThreadService {
             .await
             .map_err(|e| ThreadError::Xrpc(e.to_string()))?;
 
-        let thread_response: ThreadResponse = serde_json::from_value(response.data)
-            .map_err(ThreadError::Serialization)?;
+        let thread_response: ThreadResponse =
+            serde_json::from_value(response.data).map_err(ThreadError::Serialization)?;
 
         Ok(thread_response)
     }
@@ -678,10 +676,7 @@ mod tests {
         let item = ThreadItem::NotFound {
             uri: "at://test".to_string(),
             depth: 1,
-            value: ThreadItemNotFound {
-                uri: "at://test".to_string(),
-                not_found: true,
-            },
+            value: ThreadItemNotFound { uri: "at://test".to_string(), not_found: true },
         };
 
         assert_eq!(item.uri(), "at://test");
@@ -694,10 +689,7 @@ mod tests {
         let item = ThreadItem::Blocked {
             uri: "at://test".to_string(),
             depth: 1,
-            value: ThreadItemBlocked {
-                uri: "at://test".to_string(),
-                blocked: true,
-            },
+            value: ThreadItemBlocked { uri: "at://test".to_string(), blocked: true },
         };
 
         assert_eq!(item.uri(), "at://test");

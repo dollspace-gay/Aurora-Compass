@@ -4,8 +4,8 @@
 
 use atproto_client::session::{SessionAccount, SessionManager};
 use storage::{
-    AppPersistedState, ColorMode, DatabaseConfig, KvConfig, KvStore, OnboardingState,
-    PersistedState, PersistenceConfig, SqliteDatabase,
+    AppPersistedState, ColorMode, DatabaseConfig, KvConfig, KvStore, LanguagePrefs,
+    OnboardingState, PersistedState, PersistenceConfig, SqliteDatabase,
 };
 use tempfile::TempDir;
 
@@ -122,11 +122,19 @@ async fn test_app_state_persistence() {
         let storage = PersistedState::<AppPersistedState>::new(config);
         storage.init().await.unwrap();
 
-        let mut state = AppPersistedState::default();
-        state.color_mode = ColorMode::Dark;
-        state.language_prefs.primary_language = "es".to_string();
-        state.onboarding.current_step = Some("profile_setup".to_string());
-        state.onboarding.completed = false;
+        let state = AppPersistedState {
+            color_mode: ColorMode::Dark,
+            language_prefs: LanguagePrefs {
+                primary_language: "es".to_string(),
+                ..Default::default()
+            },
+            onboarding: OnboardingState {
+                current_step: Some("profile_setup".to_string()),
+                completed: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         storage.set(state.clone()).await.unwrap();
     }
@@ -140,11 +148,8 @@ async fn test_app_state_persistence() {
         let state: AppPersistedState = storage.get().await.unwrap();
         assert_eq!(state.color_mode, ColorMode::Dark);
         assert_eq!(state.language_prefs.primary_language, "es");
-        assert_eq!(
-            state.onboarding.current_step,
-            Some("profile_setup".to_string())
-        );
-        assert_eq!(state.onboarding.completed, false);
+        assert_eq!(state.onboarding.current_step, Some("profile_setup".to_string()));
+        assert!(!state.onboarding.completed);
     }
 }
 
@@ -168,7 +173,10 @@ async fn test_storage_layer_integration() {
         .await
         .unwrap();
 
-    let rows = db.query_all("SELECT value FROM test WHERE id = 1").await.unwrap();
+    let rows = db
+        .query_all("SELECT value FROM test WHERE id = 1")
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 1);
 
     // Test KV store operations
@@ -224,14 +232,19 @@ async fn test_complete_user_scenario() {
     session_manager.add_account(user_account).await.unwrap();
 
     // User sets preferences
-    let mut app_state = AppPersistedState::default();
-    app_state.color_mode = ColorMode::Dark;
-    app_state.language_prefs.primary_language = "en".to_string();
-    app_state.language_prefs.additional_languages = vec!["es".to_string()];
-    app_state.onboarding = OnboardingState {
-        current_step: Some("completed".to_string()),
-        completed: true,
-        seen_welcome: true,
+    let app_state = AppPersistedState {
+        color_mode: ColorMode::Dark,
+        language_prefs: LanguagePrefs {
+            primary_language: "en".to_string(),
+            additional_languages: vec!["es".to_string()],
+            ..Default::default()
+        },
+        onboarding: OnboardingState {
+            current_step: Some("completed".to_string()),
+            completed: true,
+            seen_welcome: true,
+        },
+        ..Default::default()
     };
 
     app_storage.set(app_state.clone()).await.unwrap();

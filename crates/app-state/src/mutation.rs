@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 use thiserror::Error;
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, RwLock};
 
 use crate::query::{QueryClient, QueryKey};
 
@@ -80,9 +80,7 @@ pub struct MutationContext {
 impl MutationContext {
     /// Create a new mutation context
     pub fn new() -> Self {
-        Self {
-            updates: Vec::new(),
-        }
+        Self { updates: Vec::new() }
     }
 
     /// Record an optimistic update
@@ -260,7 +258,10 @@ impl MutationClient {
     /// Get mutation state
     pub async fn state(&self, mutation_id: &str) -> MutationState {
         let state = self.state.read().await;
-        state.get(mutation_id).copied().unwrap_or(MutationState::Idle)
+        state
+            .get(mutation_id)
+            .copied()
+            .unwrap_or(MutationState::Idle)
     }
 
     /// Reset mutation state
@@ -295,7 +296,7 @@ impl Clone for MutationClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::{Query, QueryClient, QueryKey, QueryConfig};
+    use crate::query::{Query, QueryClient, QueryConfig, QueryKey};
     use storage::CacheConfig;
 
     #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
@@ -358,10 +359,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.value, "test value");
-        assert_eq!(
-            mutation_client.state("test_mutation").await,
-            MutationState::Success
-        );
+        assert_eq!(mutation_client.state("test_mutation").await, MutationState::Success);
     }
 
     #[tokio::test]
@@ -375,10 +373,7 @@ mod tests {
             .await;
 
         assert!(result.is_err());
-        assert_eq!(
-            mutation_client.state("test_mutation_fail").await,
-            MutationState::Error
-        );
+        assert_eq!(mutation_client.state("test_mutation_fail").await, MutationState::Error);
     }
 
     #[tokio::test]
@@ -393,10 +388,7 @@ mod tests {
             .unwrap();
 
         mutation_client.reset("reset_test").await;
-        assert_eq!(
-            mutation_client.state("reset_test").await,
-            MutationState::Idle
-        );
+        assert_eq!(mutation_client.state("reset_test").await, MutationState::Idle);
     }
 
     #[tokio::test]
@@ -415,13 +407,7 @@ mod tests {
             .unwrap();
 
         mutation_client.clear().await;
-        assert_eq!(
-            mutation_client.state("clear_test1").await,
-            MutationState::Idle
-        );
-        assert_eq!(
-            mutation_client.state("clear_test2").await,
-            MutationState::Idle
-        );
+        assert_eq!(mutation_client.state("clear_test1").await, MutationState::Idle);
+        assert_eq!(mutation_client.state("clear_test2").await, MutationState::Idle);
     }
 }

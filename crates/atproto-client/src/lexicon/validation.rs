@@ -243,7 +243,9 @@ fn validate_cid(value: &str) -> Result<()> {
 /// Validate datetime (RFC3339 format)
 fn validate_datetime(value: &str) -> Result<()> {
     // Basic RFC3339 check - should contain T and Z or timezone offset
-    if !value.contains('T') || (!value.ends_with('Z') && !value.contains('+') && !value.contains('-')) {
+    if !value.contains('T')
+        || (!value.ends_with('Z') && !value.contains('+') && !value.contains('-'))
+    {
         return Err(ValidationError::InvalidFormat {
             format: "datetime".to_string(),
             value: value.to_string(),
@@ -271,7 +273,11 @@ fn validate_did(value: &str) -> Result<()> {
 
     // Validate method (second part)
     let method = parts[1];
-    if method.is_empty() || !method.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    if method.is_empty()
+        || !method
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
         return Err(ValidationError::InvalidFormat {
             format: "did".to_string(),
             value: value.to_string(),
@@ -317,7 +323,10 @@ fn validate_handle(value: &str) -> Result<()> {
         }
 
         // Must contain only alphanumeric and hyphens
-        if !segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        if !segment
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
             return Err(ValidationError::InvalidFormat {
                 format: "handle".to_string(),
                 value: value.to_string(),
@@ -356,7 +365,10 @@ fn validate_tid(value: &str) -> Result<()> {
     }
 
     // Should only contain base32 characters (2-7, a-z)
-    if !value.chars().all(|c| c.is_ascii_lowercase() || ('2'..='7').contains(&c)) {
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || ('2'..='7').contains(&c))
+    {
         return Err(ValidationError::InvalidFormat {
             format: "tid".to_string(),
             value: value.to_string(),
@@ -377,7 +389,10 @@ fn validate_record_key(value: &str) -> Result<()> {
     }
 
     // Allow alphanumeric, hyphens, underscores, periods, tildes
-    if !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~') {
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~')
+    {
         return Err(ValidationError::InvalidFormat {
             format: "record-key".to_string(),
             value: value.to_string(),
@@ -426,18 +441,12 @@ fn validate_string_constraints(value: &str, constraints: &StringConstraints) -> 
     let byte_len = value.len();
     if let Some(max) = constraints.max_length {
         if byte_len > max {
-            return Err(ValidationError::StringTooLong {
-                actual: byte_len,
-                max,
-            });
+            return Err(ValidationError::StringTooLong { actual: byte_len, max });
         }
     }
     if let Some(min) = constraints.min_length {
         if byte_len < min {
-            return Err(ValidationError::StringTooShort {
-                actual: byte_len,
-                min,
-            });
+            return Err(ValidationError::StringTooShort { actual: byte_len, min });
         }
     }
 
@@ -445,27 +454,19 @@ fn validate_string_constraints(value: &str, constraints: &StringConstraints) -> 
     let grapheme_count = value.graphemes(true).count();
     if let Some(max) = constraints.max_graphemes {
         if grapheme_count > max {
-            return Err(ValidationError::TooManyGraphemes {
-                actual: grapheme_count,
-                max,
-            });
+            return Err(ValidationError::TooManyGraphemes { actual: grapheme_count, max });
         }
     }
     if let Some(min) = constraints.min_graphemes {
         if grapheme_count < min {
-            return Err(ValidationError::TooFewGraphemes {
-                actual: grapheme_count,
-                min,
-            });
+            return Err(ValidationError::TooFewGraphemes { actual: grapheme_count, min });
         }
     }
 
     // Check enum
     if let Some(allowed) = &constraints.r#enum {
         if !allowed.contains(&value.to_string()) {
-            return Err(ValidationError::NotInEnum {
-                value: value.to_string(),
-            });
+            return Err(ValidationError::NotInEnum { value: value.to_string() });
         }
     }
 
@@ -488,35 +489,21 @@ pub fn validate_integer(value: i64, constraints: &IntegerConstraints) -> Result<
     if let Some(min) = constraints.minimum {
         if let Some(max) = constraints.maximum {
             if value < min || value > max {
-                return Err(ValidationError::IntegerOutOfRange {
-                    value,
-                    min,
-                    max,
-                });
+                return Err(ValidationError::IntegerOutOfRange { value, min, max });
             }
         } else if value < min {
-            return Err(ValidationError::IntegerOutOfRange {
-                value,
-                min,
-                max: i64::MAX,
-            });
+            return Err(ValidationError::IntegerOutOfRange { value, min, max: i64::MAX });
         }
     } else if let Some(max) = constraints.maximum {
         if value > max {
-            return Err(ValidationError::IntegerOutOfRange {
-                value,
-                min: i64::MIN,
-                max,
-            });
+            return Err(ValidationError::IntegerOutOfRange { value, min: i64::MIN, max });
         }
     }
 
     // Check enum
     if let Some(allowed) = &constraints.r#enum {
         if !allowed.contains(&value) {
-            return Err(ValidationError::NotInEnum {
-                value: value.to_string(),
-            });
+            return Err(ValidationError::NotInEnum { value: value.to_string() });
         }
     }
 
@@ -537,19 +524,13 @@ pub fn validate_integer(value: i64, constraints: &IntegerConstraints) -> Result<
 pub fn validate_array_length(length: usize, constraints: &ArrayConstraints) -> Result<()> {
     if let Some(max) = constraints.max_length {
         if length > max {
-            return Err(ValidationError::ArrayTooLong {
-                actual: length,
-                max,
-            });
+            return Err(ValidationError::ArrayTooLong { actual: length, max });
         }
     }
 
     if let Some(min) = constraints.min_length {
         if length < min {
-            return Err(ValidationError::ArrayTooShort {
-                actual: length,
-                min,
-            });
+            return Err(ValidationError::ArrayTooShort { actual: length, min });
         }
     }
 
@@ -638,7 +619,8 @@ mod tests {
         assert!(validate_string_constraints("hello", &constraints).is_ok());
         assert!(validate_string_constraints("hi", &constraints).is_ok());
         assert!(validate_string_constraints("h", &constraints).is_err()); // Too short
-        assert!(validate_string_constraints("this is way too long", &constraints).is_err()); // Too long
+        assert!(validate_string_constraints("this is way too long", &constraints).is_err());
+        // Too long
     }
 
     #[test]
@@ -681,10 +663,7 @@ mod tests {
 
     #[test]
     fn test_validate_array_length_constraints() {
-        let constraints = ArrayConstraints {
-            max_length: Some(5),
-            min_length: Some(1),
-        };
+        let constraints = ArrayConstraints { max_length: Some(5), min_length: Some(1) };
 
         assert!(validate_array_length(3, &constraints).is_ok());
         assert!(validate_array_length(1, &constraints).is_ok());
@@ -731,7 +710,8 @@ mod tests {
         assert!(validate_string_constraints("🎉", &constraints).is_ok()); // 1 grapheme
         assert!(validate_string_constraints("👍🎉", &constraints).is_ok()); // 2 graphemes
         assert!(validate_string_constraints("👍🎉❤", &constraints).is_ok()); // 3 graphemes
-        assert!(validate_string_constraints("👍🎉❤️🔥", &constraints).is_err()); // 4 graphemes - too many
+        assert!(validate_string_constraints("👍🎉❤️🔥", &constraints).is_err());
+        // 4 graphemes - too many
     }
 
     #[test]
@@ -748,7 +728,8 @@ mod tests {
 
         // Multiple combining marks should still count as single grapheme
         assert!(validate_string_constraints("e\u{0301}", &constraints).is_ok()); // e + combining acute = 1 grapheme
-        assert!(validate_string_constraints("e\u{0301}\u{0302}", &constraints).is_ok()); // e + two combining marks = 1 grapheme
+        assert!(validate_string_constraints("e\u{0301}\u{0302}", &constraints).is_ok());
+        // e + two combining marks = 1 grapheme
     }
 
     #[test]
@@ -781,7 +762,8 @@ mod tests {
         // Mix of ASCII, emoji, and combining characters
         assert!(validate_string_constraints("Hello 👋", &constraints).is_ok()); // 7 graphemes: H-e-l-l-o-space-wave
         assert!(validate_string_constraints("café ☕", &constraints).is_ok()); // 6 graphemes
-        assert!(validate_string_constraints("🎉Party🎊", &constraints).is_ok()); // 7 graphemes
+        assert!(validate_string_constraints("🎉Party🎊", &constraints).is_ok());
+        // 7 graphemes
     }
 
     #[test]

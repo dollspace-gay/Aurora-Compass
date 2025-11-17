@@ -715,8 +715,8 @@ mod tests {
 
     #[test]
     fn test_agent_with_app_view() {
-        let config = BskyAgentConfig::new("https://bsky.social")
-            .with_app_view("https://api.bsky.app");
+        let config =
+            BskyAgentConfig::new("https://bsky.social").with_app_view("https://api.bsky.app");
         let agent = BskyAgent::with_config(config).unwrap();
 
         assert_eq!(agent.service(), "https://bsky.social");

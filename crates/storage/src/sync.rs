@@ -11,12 +11,12 @@
 //! - Network state management
 //! - Cross-instance synchronization
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{broadcast, RwLock, Mutex};
-use serde::{Serialize, Deserialize};
+use tokio::sync::{broadcast, Mutex, RwLock};
 
 /// Errors that can occur during state synchronization
 #[derive(Debug, thiserror::Error)]
@@ -255,7 +255,9 @@ impl StateSync {
         let mut current = self.network_state.write().await;
         if *current != state {
             *current = state;
-            let _ = self.update_tx.send(UpdateEvent::NetworkStateChanged { state });
+            let _ = self
+                .update_tx
+                .send(UpdateEvent::NetworkStateChanged { state });
         }
         Ok(())
     }
@@ -312,11 +314,9 @@ impl StateSync {
         );
 
         // Emit update event
-        let _ = self.update_tx.send(UpdateEvent::KeyUpdated {
-            key,
-            version: new_version,
-            timestamp,
-        });
+        let _ =
+            self.update_tx
+                .send(UpdateEvent::KeyUpdated { key, version: new_version, timestamp });
 
         Ok(new_version)
     }
@@ -392,10 +392,7 @@ impl StateSync {
         match self.config.conflict_strategy {
             ConflictStrategy::LastWriteWins => {
                 let versions = self.state_versions.read().await;
-                let local_timestamp = versions
-                    .get(key)
-                    .map(|v| v.timestamp)
-                    .unwrap_or(0);
+                let local_timestamp = versions.get(key).map(|v| v.timestamp).unwrap_or(0);
 
                 if remote_timestamp > local_timestamp {
                     // Remote is newer
@@ -406,20 +403,14 @@ impl StateSync {
                 }
             }
 
-            ConflictStrategy::LocalWins => {
-                Ok((serde_json::to_string(local_value)?, false))
-            }
+            ConflictStrategy::LocalWins => Ok((serde_json::to_string(local_value)?, false)),
 
-            ConflictStrategy::RemoteWins => {
-                Ok((serde_json::to_string(remote_value)?, true))
-            }
+            ConflictStrategy::RemoteWins => Ok((serde_json::to_string(remote_value)?, true)),
 
-            ConflictStrategy::Manual => {
-                Err(SyncError::ConflictError(format!(
-                    "Manual conflict resolution required for key: {}",
-                    key
-                )))
-            }
+            ConflictStrategy::Manual => Err(SyncError::ConflictError(format!(
+                "Manual conflict resolution required for key: {}",
+                key
+            ))),
         }
     }
 
@@ -594,14 +585,7 @@ mod tests {
         let remote_timestamp = local_timestamp + 1000;
 
         let (resolved, should_update) = sync
-            .resolve_conflict(
-                "key",
-                &"local",
-                1,
-                &"remote",
-                2,
-                remote_timestamp,
-            )
+            .resolve_conflict("key", &"local", 1, &"remote", 2, remote_timestamp)
             .await
             .unwrap();
 

@@ -7,6 +7,6 @@
 #![warn(clippy::all)]
 
 pub mod components;
+pub mod navigation;
 pub mod screens;
 pub mod theme;
-pub mod navigation;

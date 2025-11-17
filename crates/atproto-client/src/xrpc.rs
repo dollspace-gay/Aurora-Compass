@@ -67,10 +67,7 @@ impl XrpcError {
     /// Based on original-bluesky/src/state/messages/convo/const.ts
     /// Network failure statuses: 1, 408, 425, 429, 500, 502, 503, 504, 522, 524
     pub fn is_network_error(&self) -> bool {
-        matches!(
-            self.status,
-            1 | 408 | 425 | 429 | 500 | 502 | 503 | 504 | 522 | 524
-        )
+        matches!(self.status, 1 | 408 | 425 | 429 | 500 | 502 | 503 | 504 | 522 | 524)
     }
 
     /// Check if this error is recoverable (can be retried)
@@ -81,11 +78,7 @@ impl XrpcError {
 
 impl std::fmt::Display for XrpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "XRPC error {}: {} - {}",
-            self.status, self.error, self.message
-        )
+        write!(f, "XRPC error {}: {} - {}", self.status, self.error, self.message)
     }
 }
 
@@ -218,11 +211,7 @@ pub struct XrpcResponse<T> {
 impl<T> XrpcResponse<T> {
     /// Create a new response
     pub fn new(status: u16, headers: HashMap<String, String>, data: T) -> Self {
-        Self {
-            status,
-            headers,
-            data,
-        }
+        Self { status, headers, data }
     }
 
     /// Get a header value
@@ -341,10 +330,7 @@ mod tests {
         assert_eq!(req.method, HttpMethod::Get);
         assert_eq!(req.nsid, "com.atproto.repo.getRecord");
         assert_eq!(req.params.get("repo"), Some(&"did:plc:123".to_string()));
-        assert_eq!(
-            req.headers.get("Authorization"),
-            Some(&"Bearer token".to_string())
-        );
+        assert_eq!(req.headers.get("Authorization"), Some(&"Bearer token".to_string()));
     }
 
     #[test]
@@ -363,9 +349,7 @@ mod tests {
             foo: String,
         }
 
-        let data = TestData {
-            foo: "bar".to_string(),
-        };
+        let data = TestData { foo: "bar".to_string() };
 
         let req = XrpcRequest::procedure("test.method")
             .json_body(&data)
@@ -385,10 +369,7 @@ mod tests {
 
         assert_eq!(response.status, 200);
         assert!(response.is_success());
-        assert_eq!(
-            response.header("content-type"),
-            Some(&"application/json".to_string())
-        );
+        assert_eq!(response.header("content-type"), Some(&"application/json".to_string()));
         assert_eq!(response.data, "test data");
     }
 
@@ -410,10 +391,7 @@ mod tests {
         assert_eq!(config.service_url, "https://custom.server");
         assert_eq!(config.timeout, Duration::from_secs(60));
         assert_eq!(config.user_agent, "CustomAgent/1.0");
-        assert_eq!(
-            config.default_headers.get("X-Custom"),
-            Some(&"value".to_string())
-        );
+        assert_eq!(config.default_headers.get("X-Custom"), Some(&"value".to_string()));
     }
 
     #[test]
@@ -468,10 +446,7 @@ impl Default for RetryConfig {
 impl RetryConfig {
     /// Create a new retry configuration
     pub fn new(max_retries: usize) -> Self {
-        Self {
-            max_retries,
-            ..Default::default()
-        }
+        Self { max_retries, ..Default::default() }
     }
 
     /// Set the initial delay
@@ -494,8 +469,8 @@ impl RetryConfig {
 
     /// Calculate the delay for a given retry attempt
     fn calculate_delay(&self, attempt: usize) -> Duration {
-        let delay_ms = self.initial_delay.as_millis() as f64
-            * self.backoff_multiplier.powi(attempt as i32);
+        let delay_ms =
+            self.initial_delay.as_millis() as f64 * self.backoff_multiplier.powi(attempt as i32);
 
         let delay = Duration::from_millis(delay_ms as u64);
 
@@ -980,16 +955,20 @@ impl XrpcClient {
         }
 
         // Execute request
-        let response = req.send().await.map_err(|e| {
-            XrpcError::new(0, "NetworkError", format!("Request failed: {}", e))
-        })?;
+        let response = req
+            .send()
+            .await
+            .map_err(|e| XrpcError::new(0, "NetworkError", format!("Request failed: {}", e)))?;
 
         // Convert to XrpcResponse
         self.parse_response(response).await
     }
 
     /// Parse reqwest response into XrpcResponse
-    async fn parse_response<T>(&self, response: ReqwestResponse) -> Result<XrpcResponse<T>, XrpcError>
+    async fn parse_response<T>(
+        &self,
+        response: ReqwestResponse,
+    ) -> Result<XrpcResponse<T>, XrpcError>
     where
         T: for<'de> Deserialize<'de>,
     {
@@ -1009,11 +988,7 @@ impl XrpcClient {
 
             // Try to parse as XrpcErrorResponse
             if let Ok(error_response) = serde_json::from_str::<XrpcErrorResponse>(&error_body) {
-                return Err(XrpcError::new(
-                    status,
-                    error_response.error,
-                    error_response.message,
-                ));
+                return Err(XrpcError::new(status, error_response.error, error_response.message));
             } else {
                 return Err(XrpcError::new(
                     status,
@@ -1028,9 +1003,8 @@ impl XrpcClient {
             XrpcError::new(0, "ParseError", format!("Failed to read response: {}", e))
         })?;
 
-        let data: T = serde_json::from_str(&body).map_err(|e| {
-            XrpcError::new(0, "ParseError", format!("Failed to parse JSON: {}", e))
-        })?;
+        let data: T = serde_json::from_str(&body)
+            .map_err(|e| XrpcError::new(0, "ParseError", format!("Failed to parse JSON: {}", e)))?;
 
         Ok(XrpcResponse::new(status, headers, data))
     }

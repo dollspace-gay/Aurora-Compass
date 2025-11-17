@@ -151,10 +151,7 @@ mod tests {
 
     #[test]
     fn test_boolean_constraints_serde() {
-        let constraints = BooleanConstraints {
-            default: Some(true),
-            ..Default::default()
-        };
+        let constraints = BooleanConstraints { default: Some(true), ..Default::default() };
 
         let json = serde_json::to_string(&constraints).unwrap();
         let deserialized: BooleanConstraints = serde_json::from_str(&json).unwrap();
@@ -163,10 +160,7 @@ mod tests {
 
     #[test]
     fn test_array_constraints_serde() {
-        let constraints = ArrayConstraints {
-            max_length: Some(10),
-            min_length: Some(1),
-        };
+        let constraints = ArrayConstraints { max_length: Some(10), min_length: Some(1) };
 
         let json = serde_json::to_string(&constraints).unwrap();
         let deserialized: ArrayConstraints = serde_json::from_str(&json).unwrap();
@@ -187,10 +181,7 @@ mod tests {
 
     #[test]
     fn test_bytes_constraints_serde() {
-        let constraints = BytesConstraints {
-            max_length: Some(1024),
-            min_length: Some(16),
-        };
+        let constraints = BytesConstraints { max_length: Some(1024), min_length: Some(16) };
 
         let json = serde_json::to_string(&constraints).unwrap();
         let deserialized: BytesConstraints = serde_json::from_str(&json).unwrap();

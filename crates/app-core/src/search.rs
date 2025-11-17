@@ -111,9 +111,7 @@ impl ActorSearchService {
     /// ```
     pub async fn search_actors(&self, params: ActorSearchParams) -> Result<ActorSearchResponse> {
         if params.query.trim().is_empty() {
-            return Err(SearchError::InvalidQuery(
-                "Query cannot be empty".to_string(),
-            ));
+            return Err(SearchError::InvalidQuery("Query cannot be empty".to_string()));
         }
 
         let client = self.client.read().await;
@@ -131,8 +129,8 @@ impl ActorSearchService {
             .await
             .map_err(|e| SearchError::ApiError(e.to_string()))?;
 
-        let search_response: ActorSearchResponse = serde_json::from_value(response.data)
-            .map_err(SearchError::ParseError)?;
+        let search_response: ActorSearchResponse =
+            serde_json::from_value(response.data).map_err(SearchError::ParseError)?;
 
         Ok(search_response)
     }
@@ -181,18 +179,17 @@ impl ActorSearchService {
 
         let client = self.client.read().await;
 
-        let request =
-            atproto_client::XrpcRequest::query("app.bsky.actor.searchActorsTypeahead")
-                .param("q", &query)
-                .param("limit", params.limit.to_string());
+        let request = atproto_client::XrpcRequest::query("app.bsky.actor.searchActorsTypeahead")
+            .param("q", &query)
+            .param("limit", params.limit.to_string());
 
         let response = client
             .query(request)
             .await
             .map_err(|e| SearchError::ApiError(e.to_string()))?;
 
-        let search_response: ActorTypeaheadResponse = serde_json::from_value(response.data)
-            .map_err(SearchError::ParseError)?;
+        let search_response: ActorTypeaheadResponse =
+            serde_json::from_value(response.data).map_err(SearchError::ParseError)?;
 
         Ok(search_response)
     }
@@ -326,10 +323,7 @@ impl Default for PostSearchParams {
 impl PostSearchParams {
     /// Create new search params with query
     pub fn new(query: impl Into<String>) -> Self {
-        Self {
-            query: query.into(),
-            ..Default::default()
-        }
+        Self { query: query.into(), ..Default::default() }
     }
 
     /// Set sort order
@@ -363,11 +357,7 @@ impl PostSearchParams {
         if let Some(start) = self.query.find("from:") {
             let after_from = &self.query[start + 5..];
             // Extract until space or end
-            let handle = after_from
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .trim();
+            let handle = after_from.split_whitespace().next().unwrap_or("").trim();
 
             if !handle.is_empty() {
                 return Some(handle.to_string());
@@ -431,9 +421,7 @@ impl PostSearchService {
     /// ```
     pub async fn search_posts(&self, params: PostSearchParams) -> Result<PostSearchResponse> {
         if params.query.trim().is_empty() {
-            return Err(SearchError::InvalidQuery(
-                "Query cannot be empty".to_string(),
-            ));
+            return Err(SearchError::InvalidQuery("Query cannot be empty".to_string()));
         }
 
         let client = self.client.read().await;
@@ -452,8 +440,8 @@ impl PostSearchService {
             .await
             .map_err(|e| SearchError::ApiError(e.to_string()))?;
 
-        let search_response: PostSearchResponse = serde_json::from_value(response.data)
-            .map_err(SearchError::ParseError)?;
+        let search_response: PostSearchResponse =
+            serde_json::from_value(response.data).map_err(SearchError::ParseError)?;
 
         Ok(search_response)
     }
@@ -754,10 +742,7 @@ mod tests {
     #[test]
     fn test_post_search_params_extract_user_filter() {
         let params1 = PostSearchParams::new("from:alice.bsky.social rust programming");
-        assert_eq!(
-            params1.extract_user_filter(),
-            Some("alice.bsky.social".to_string())
-        );
+        assert_eq!(params1.extract_user_filter(), Some("alice.bsky.social".to_string()));
 
         let params2 = PostSearchParams::new("from:bob.test");
         assert_eq!(params2.extract_user_filter(), Some("bob.test".to_string()));
@@ -772,19 +757,13 @@ mod tests {
     #[test]
     fn test_post_search_params_extract_user_filter_at_end() {
         let params = PostSearchParams::new("rust from:alice.bsky.social");
-        assert_eq!(
-            params.extract_user_filter(),
-            Some("alice.bsky.social".to_string())
-        );
+        assert_eq!(params.extract_user_filter(), Some("alice.bsky.social".to_string()));
     }
 
     #[test]
     fn test_post_search_params_extract_user_filter_only() {
         let params = PostSearchParams::new("from:alice.bsky.social");
-        assert_eq!(
-            params.extract_user_filter(),
-            Some("alice.bsky.social".to_string())
-        );
+        assert_eq!(params.extract_user_filter(), Some("alice.bsky.social".to_string()));
     }
 
     #[test]
@@ -803,11 +782,7 @@ mod tests {
 
     #[test]
     fn test_post_search_response_no_hits_total() {
-        let response = PostSearchResponse {
-            posts: vec![],
-            cursor: None,
-            hits_total: None,
-        };
+        let response = PostSearchResponse { posts: vec![], cursor: None, hits_total: None };
 
         let json = serde_json::to_string(&response).unwrap();
         // hitsTotal should not be in JSON when None
@@ -816,11 +791,7 @@ mod tests {
 
     #[test]
     fn test_post_search_response_no_cursor() {
-        let response = PostSearchResponse {
-            posts: vec![],
-            cursor: None,
-            hits_total: Some(10),
-        };
+        let response = PostSearchResponse { posts: vec![], cursor: None, hits_total: Some(10) };
 
         let json = serde_json::to_string(&response).unwrap();
         // cursor should not be in JSON when None

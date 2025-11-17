@@ -19,12 +19,8 @@ pub use database::{
     Database, DatabaseConfig, DatabaseError, DatabaseTransaction, MigrationDefinition,
     SqliteDatabase, SynchronousMode,
 };
-pub use kv::{
-    AccountStore, CompareAndSwapError, DeviceStore, KvConfig, KvError, KvStore,
-};
+pub use kv::{AccountStore, CompareAndSwapError, DeviceStore, KvConfig, KvError, KvStore};
 pub use persistence::{
     MigratableState, PersistedState, PersistenceConfig, PersistenceError, StateMigration,
 };
-pub use sync::{
-    ConflictStrategy, NetworkState, StateSync, SyncConfig, SyncError, UpdateEvent,
-};
+pub use sync::{ConflictStrategy, NetworkState, StateSync, SyncConfig, SyncError, UpdateEvent};

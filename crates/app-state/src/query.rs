@@ -9,9 +9,9 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use storage::{TieredCache, CacheConfig};
+use storage::{CacheConfig, TieredCache};
 use thiserror::Error;
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
 /// Query errors
@@ -227,8 +227,7 @@ pub struct QueryClient {
 impl QueryClient {
     /// Create a new query client
     pub fn new(cache_config: CacheConfig) -> Result<Self> {
-        let cache = TieredCache::new(cache_config)
-            .map_err(QueryError::CacheError)?;
+        let cache = TieredCache::new(cache_config).map_err(QueryError::CacheError)?;
 
         Ok(Self {
             cache: Arc::new(cache),
@@ -258,7 +257,8 @@ impl QueryClient {
                 // Stale data - trigger background refetch if enabled
                 if config.refetch_on_stale {
                     drop(meta);
-                    self.spawn_background_refetch(query.clone(), cache_key.clone()).await;
+                    self.spawn_background_refetch(query.clone(), cache_key.clone())
+                        .await;
                 } else {
                     drop(meta);
                 }
@@ -298,7 +298,9 @@ impl QueryClient {
             // Update state to fetching
             {
                 let mut meta_guard = meta.write().await;
-                let query_meta = meta_guard.entry(task_cache_key.clone()).or_insert_with(QueryMeta::new);
+                let query_meta = meta_guard
+                    .entry(task_cache_key.clone())
+                    .or_insert_with(QueryMeta::new);
                 query_meta.state = QueryState::Fetching;
                 query_meta.fetch_count += 1;
             }
@@ -545,9 +547,7 @@ mod tests {
         let client = QueryClient::new(CacheConfig::default()).unwrap();
         let query = TestQuery {
             key: QueryKey::new("test", "1"),
-            data: TestData {
-                value: "test value".to_string(),
-            },
+            data: TestData { value: "test value".to_string() },
             should_fail: false,
         };
 
@@ -560,9 +560,7 @@ mod tests {
         let client = QueryClient::new(CacheConfig::default()).unwrap();
         let query = TestQuery {
             key: QueryKey::new("test", "2"),
-            data: TestData {
-                value: "cached value".to_string(),
-            },
+            data: TestData { value: "cached value".to_string() },
             should_fail: false,
         };
 
@@ -581,9 +579,7 @@ mod tests {
         let key = QueryKey::new("test", "3");
         let query = TestQuery {
             key: key.clone(),
-            data: TestData {
-                value: "invalidate test".to_string(),
-            },
+            data: TestData { value: "invalidate test".to_string() },
             should_fail: false,
         };
 
@@ -633,9 +629,7 @@ mod tests {
         let client = QueryClient::new(config).unwrap();
         let query = TestQuery {
             key: QueryKey::new("test", "fail"),
-            data: TestData {
-                value: "will fail".to_string(),
-            },
+            data: TestData { value: "will fail".to_string() },
             should_fail: true,
         };
 
@@ -649,9 +643,7 @@ mod tests {
         let client = QueryClient::new(CacheConfig::default()).unwrap();
         let query = TestQuery {
             key: QueryKey::new("test", "clear"),
-            data: TestData {
-                value: "to be cleared".to_string(),
-            },
+            data: TestData { value: "to be cleared".to_string() },
             should_fail: false,
         };
 

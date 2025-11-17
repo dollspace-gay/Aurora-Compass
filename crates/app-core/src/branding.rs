@@ -129,11 +129,7 @@ mod tests {
 
         for color in &color_list {
             assert!(color.starts_with('#'), "Color should start with #: {}", color);
-            assert!(
-                color.len() == 7,
-                "Color should be 7 characters (#RRGGBB): {}",
-                color
-            );
+            assert!(color.len() == 7, "Color should be 7 characters (#RRGGBB): {}", color);
         }
     }
 

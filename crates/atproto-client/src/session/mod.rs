@@ -319,9 +319,7 @@ pub fn parse_jwt_claims(token: &str) -> Result<JwtClaims> {
 /// ```
 pub fn get_jwt_expiration(token: &str) -> Option<DateTime<Utc>> {
     let claims = parse_jwt_claims(token).ok()?;
-    claims
-        .exp
-        .and_then(|exp| DateTime::from_timestamp(exp, 0))
+    claims.exp.and_then(|exp| DateTime::from_timestamp(exp, 0))
 }
 
 /// Check if a JWT token is expired
@@ -929,8 +927,7 @@ mod tests {
         let session_data = account.to_session_data().unwrap();
 
         // Convert back to session account
-        let round_trip_account =
-            session_data.to_session_account("https://bsky.social".to_string());
+        let round_trip_account = session_data.to_session_account("https://bsky.social".to_string());
 
         // Verify key fields match
         assert_eq!(account.did, round_trip_account.did);

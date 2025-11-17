@@ -95,10 +95,7 @@ pub struct RichText {
 impl RichText {
     /// Create a new RichText instance
     pub fn new(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            facets: None,
-        }
+        Self { text: text.into(), facets: None }
     }
 
     /// Detect facets in the text
@@ -187,10 +184,7 @@ fn detect_links(text: &str) -> Vec<Facet> {
             let byte_end = byte_start + url.len();
 
             facets.push(Facet {
-                index: ByteSlice {
-                    byte_start,
-                    byte_end,
-                },
+                index: ByteSlice { byte_start, byte_end },
                 features: vec![FacetFeature::Link(Link { uri })],
             });
         }
@@ -225,10 +219,7 @@ fn detect_mentions(text: &str) -> Vec<Facet> {
             // This would typically require an API call
             // The DID would be filled in by the caller
             facets.push(Facet {
-                index: ByteSlice {
-                    byte_start,
-                    byte_end,
-                },
+                index: ByteSlice { byte_start, byte_end },
                 features: vec![FacetFeature::Mention(Mention {
                     did: format!("did:placeholder:{}", handle),
                 })],
@@ -262,13 +253,8 @@ fn detect_tags(text: &str) -> Vec<Facet> {
             let byte_end = byte_start + tag_text.len();
 
             facets.push(Facet {
-                index: ByteSlice {
-                    byte_start,
-                    byte_end,
-                },
-                features: vec![FacetFeature::Tag(Tag {
-                    tag: tag_name.to_string(),
-                })],
+                index: ByteSlice { byte_start, byte_end },
+                features: vec![FacetFeature::Tag(Tag { tag: tag_name.to_string() })],
             });
         }
     }
@@ -299,15 +285,9 @@ impl ReplyRef {
     ///
     /// When replying to a top-level post, root and parent are the same
     pub fn to_post(uri: impl Into<String>, cid: impl Into<String>) -> Self {
-        let strong_ref = StrongRef {
-            uri: uri.into(),
-            cid: cid.into(),
-        };
+        let strong_ref = StrongRef { uri: uri.into(), cid: cid.into() };
 
-        Self {
-            root: strong_ref.clone(),
-            parent: strong_ref,
-        }
+        Self { root: strong_ref.clone(), parent: strong_ref }
     }
 
     /// Create a reply reference for replying within a thread
@@ -325,14 +305,8 @@ impl ReplyRef {
         parent_cid: impl Into<String>,
     ) -> Self {
         Self {
-            root: StrongRef {
-                uri: root_uri.into(),
-                cid: root_cid.into(),
-            },
-            parent: StrongRef {
-                uri: parent_uri.into(),
-                cid: parent_cid.into(),
-            },
+            root: StrongRef { uri: root_uri.into(), cid: root_cid.into() },
+            parent: StrongRef { uri: parent_uri.into(), cid: parent_cid.into() },
         }
     }
 
@@ -457,9 +431,7 @@ pub struct ReplyComposer {
 impl ReplyComposer {
     /// Create a new reply composer
     pub fn new(client: XrpcClient) -> Self {
-        Self {
-            client: Arc::new(RwLock::new(client)),
-        }
+        Self { client: Arc::new(RwLock::new(client)) }
     }
 
     /// Create a reply post
@@ -512,8 +484,8 @@ impl ReplyComposer {
             .await
             .map_err(|e| ReplyError::Xrpc(e.to_string()))?;
 
-        let create_response: CreatePostResponse = serde_json::from_value(response.data)
-            .map_err(ReplyError::Serialization)?;
+        let create_response: CreatePostResponse =
+            serde_json::from_value(response.data).map_err(ReplyError::Serialization)?;
 
         Ok((create_response.uri, create_response.cid))
     }
@@ -555,11 +527,7 @@ impl ReplyComposer {
         if reply_ref.is_top_level_reply() {
             format!("Replying to {}", reply_ref.parent_uri())
         } else {
-            format!(
-                "Replying to {} (in thread {})",
-                reply_ref.parent_uri(),
-                reply_ref.root_uri()
-            )
+            format!("Replying to {} (in thread {})", reply_ref.parent_uri(), reply_ref.root_uri())
         }
     }
 }
@@ -622,11 +590,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            rt.substring(
-                mention_facet.index.byte_start,
-                mention_facet.index.byte_end
-            )
-            .unwrap(),
+            rt.substring(mention_facet.index.byte_start, mention_facet.index.byte_end)
+                .unwrap(),
             "@alice.bsky.social"
         );
     }
@@ -697,13 +662,8 @@ mod tests {
     #[test]
     fn test_facet_serialization() {
         let facet = Facet {
-            index: ByteSlice {
-                byte_start: 0,
-                byte_end: 10,
-            },
-            features: vec![FacetFeature::Link(Link {
-                uri: "https://example.com".to_string(),
-            })],
+            index: ByteSlice { byte_start: 0, byte_end: 10 },
+            features: vec![FacetFeature::Link(Link { uri: "https://example.com".to_string() })],
         };
 
         let json = serde_json::to_string(&facet).unwrap();
@@ -714,9 +674,7 @@ mod tests {
 
     #[test]
     fn test_mention_feature_serialization() {
-        let feature = FacetFeature::Mention(Mention {
-            did: "did:plc:test123".to_string(),
-        });
+        let feature = FacetFeature::Mention(Mention { did: "did:plc:test123".to_string() });
 
         let json = serde_json::to_string(&feature).unwrap();
         assert!(json.contains("app.bsky.richtext.facet#mention"));
@@ -725,9 +683,7 @@ mod tests {
 
     #[test]
     fn test_tag_feature_serialization() {
-        let feature = FacetFeature::Tag(Tag {
-            tag: "awesome".to_string(),
-        });
+        let feature = FacetFeature::Tag(Tag { tag: "awesome".to_string() });
 
         let json = serde_json::to_string(&feature).unwrap();
         assert!(json.contains("app.bsky.richtext.facet#tag"));
@@ -747,10 +703,8 @@ mod tests {
 
     #[test]
     fn test_reply_ref_to_post() {
-        let reply_ref = ReplyRef::to_post(
-            "at://did:plc:test/app.bsky.feed.post/123",
-            "bafytest123",
-        );
+        let reply_ref =
+            ReplyRef::to_post("at://did:plc:test/app.bsky.feed.post/123", "bafytest123");
 
         assert!(reply_ref.is_top_level_reply());
         assert_eq!(reply_ref.root.uri, reply_ref.parent.uri);
@@ -779,10 +733,8 @@ mod tests {
 
     #[test]
     fn test_reply_ref_serialization() {
-        let reply_ref = ReplyRef::to_post(
-            "at://did:plc:test/app.bsky.feed.post/123",
-            "bafytest123",
-        );
+        let reply_ref =
+            ReplyRef::to_post("at://did:plc:test/app.bsky.feed.post/123", "bafytest123");
 
         let json = serde_json::to_string(&reply_ref).unwrap();
         let deserialized: ReplyRef = serde_json::from_str(&json).unwrap();
@@ -792,10 +744,8 @@ mod tests {
 
     #[test]
     fn test_post_record_with_reply() {
-        let reply_ref = ReplyRef::to_post(
-            "at://did:plc:test/app.bsky.feed.post/parent",
-            "bafyparent",
-        );
+        let reply_ref =
+            ReplyRef::to_post("at://did:plc:test/app.bsky.feed.post/parent", "bafyparent");
 
         let record = PostRecord {
             text: "This is a reply".to_string(),
@@ -849,10 +799,8 @@ mod tests {
         let composer = ReplyComposer::new(client);
 
         // Top-level reply
-        let reply_ref = ReplyRef::to_post(
-            "at://did:plc:test/app.bsky.feed.post/123",
-            "bafytest123",
-        );
+        let reply_ref =
+            ReplyRef::to_post("at://did:plc:test/app.bsky.feed.post/123", "bafytest123");
         let context = composer.get_reply_context(&reply_ref);
         assert!(context.contains("Replying to"));
         assert!(context.contains("at://did:plc:test/app.bsky.feed.post/123"));

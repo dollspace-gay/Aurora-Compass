@@ -84,10 +84,7 @@ impl Default for DatabaseConfig {
 impl DatabaseConfig {
     /// Create a new database configuration
     pub fn new(path: impl Into<String>) -> Self {
-        Self {
-            path: path.into(),
-            ..Default::default()
-        }
+        Self { path: path.into(), ..Default::default() }
     }
 
     /// Set maximum connections
@@ -122,8 +119,11 @@ pub trait Database: Send + Sync {
     async fn execute(&self, sql: &str) -> Result<u64>;
 
     /// Execute a raw SQL query with parameters
-    async fn execute_with_params(&self, sql: &str, params: &[&dyn sqlx::Encode<'_, Sqlite>])
-        -> Result<u64>;
+    async fn execute_with_params(
+        &self,
+        sql: &str,
+        params: &[&dyn sqlx::Encode<'_, Sqlite>],
+    ) -> Result<u64>;
 
     /// Query a single row
     async fn query_one(&self, sql: &str) -> Result<sqlx::sqlite::SqliteRow>;
@@ -206,9 +206,10 @@ impl SqliteDatabase {
         .await?;
 
         // Get current version
-        let current_version: Option<i64> = sqlx::query_scalar("SELECT MAX(version) FROM _migrations")
-            .fetch_optional(&self.pool)
-            .await?;
+        let current_version: Option<i64> =
+            sqlx::query_scalar("SELECT MAX(version) FROM _migrations")
+                .fetch_optional(&self.pool)
+                .await?;
 
         let current_version = current_version.unwrap_or(0);
 
@@ -316,10 +317,9 @@ pub struct DatabaseTransaction {
 impl DatabaseTransaction {
     /// Execute a query within the transaction
     pub async fn execute(&mut self, sql: &str) -> Result<u64> {
-        let tx = self
-            .tx
-            .as_mut()
-            .ok_or_else(|| DatabaseError::Transaction("Transaction already committed".to_string()))?;
+        let tx = self.tx.as_mut().ok_or_else(|| {
+            DatabaseError::Transaction("Transaction already committed".to_string())
+        })?;
 
         let result = sqlx::query(sql).execute(&mut **tx).await?;
         Ok(result.rows_affected())
@@ -327,10 +327,9 @@ impl DatabaseTransaction {
 
     /// Query a single row within the transaction
     pub async fn query_one(&mut self, sql: &str) -> Result<sqlx::sqlite::SqliteRow> {
-        let tx = self
-            .tx
-            .as_mut()
-            .ok_or_else(|| DatabaseError::Transaction("Transaction already committed".to_string()))?;
+        let tx = self.tx.as_mut().ok_or_else(|| {
+            DatabaseError::Transaction("Transaction already committed".to_string())
+        })?;
 
         let row = sqlx::query(sql)
             .fetch_one(&mut **tx)
@@ -344,10 +343,9 @@ impl DatabaseTransaction {
 
     /// Query multiple rows within the transaction
     pub async fn query_all(&mut self, sql: &str) -> Result<Vec<sqlx::sqlite::SqliteRow>> {
-        let tx = self
-            .tx
-            .as_mut()
-            .ok_or_else(|| DatabaseError::Transaction("Transaction already committed".to_string()))?;
+        let tx = self.tx.as_mut().ok_or_else(|| {
+            DatabaseError::Transaction("Transaction already committed".to_string())
+        })?;
 
         let rows = sqlx::query(sql).fetch_all(&mut **tx).await?;
         Ok(rows)
@@ -355,10 +353,9 @@ impl DatabaseTransaction {
 
     /// Commit the transaction
     pub async fn commit(mut self) -> Result<()> {
-        let tx = self
-            .tx
-            .take()
-            .ok_or_else(|| DatabaseError::Transaction("Transaction already committed".to_string()))?;
+        let tx = self.tx.take().ok_or_else(|| {
+            DatabaseError::Transaction("Transaction already committed".to_string())
+        })?;
 
         tx.commit().await?;
         Ok(())
@@ -366,10 +363,9 @@ impl DatabaseTransaction {
 
     /// Rollback the transaction
     pub async fn rollback(mut self) -> Result<()> {
-        let tx = self
-            .tx
-            .take()
-            .ok_or_else(|| DatabaseError::Transaction("Transaction already committed".to_string()))?;
+        let tx = self.tx.take().ok_or_else(|| {
+            DatabaseError::Transaction("Transaction already committed".to_string())
+        })?;
 
         tx.rollback().await?;
         Ok(())
@@ -391,11 +387,7 @@ pub struct MigrationDefinition {
 
 impl MigrationDefinition {
     /// Create a new migration definition
-    pub fn new(
-        version: i64,
-        description: impl Into<String>,
-        sql: impl Into<String>,
-    ) -> Self {
+    pub fn new(version: i64, description: impl Into<String>, sql: impl Into<String>) -> Self {
         let sql = sql.into();
         let checksum = format!("{:x}", md5::compute(&sql));
 
@@ -469,7 +461,9 @@ mod tests {
             .await
             .unwrap();
 
-        let result = db.query_one("SELECT * FROM test WHERE name = 'nonexistent'").await;
+        let result = db
+            .query_one("SELECT * FROM test WHERE name = 'nonexistent'")
+            .await;
         assert!(matches!(result, Err(DatabaseError::NotFound(_))));
     }
 

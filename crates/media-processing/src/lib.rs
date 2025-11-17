@@ -6,6 +6,6 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod compression;
 pub mod image;
 pub mod video;
-pub mod compression;

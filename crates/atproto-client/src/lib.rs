@@ -21,8 +21,8 @@ pub use agent::{
     LoginRequest, LoginResponse, RefreshSessionResponse, SessionEvent,
 };
 pub use session::{
-    get_jwt_expiration, is_jwt_expired, is_jwt_expiring_soon, is_session_expired,
-    is_signup_queued, parse_jwt_claims, AtpSessionData, JwtClaims, SessionAccount, SessionError,
+    get_jwt_expiration, is_jwt_expired, is_jwt_expiring_soon, is_session_expired, is_signup_queued,
+    parse_jwt_claims, AtpSessionData, JwtClaims, SessionAccount, SessionError,
 };
 pub use types::{AtUri, Did, Handle, StrongRef, Tid};
 pub use xrpc::{

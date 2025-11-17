@@ -80,9 +80,7 @@ impl Did {
 
         let identifier = parts[2..].join(":");
         if identifier.is_empty() {
-            return Err(Error::InvalidDid(
-                "DID identifier cannot be empty".to_string(),
-            ));
+            return Err(Error::InvalidDid("DID identifier cannot be empty".to_string()));
         }
 
         // Validate method is supported (plc or web)
@@ -164,9 +162,7 @@ impl Handle {
             .chars()
             .all(|c| c.is_alphanumeric() || c == '.' || c == '-')
         {
-            return Err(Error::InvalidHandle(
-                "Handle contains invalid characters".to_string(),
-            ));
+            return Err(Error::InvalidHandle("Handle contains invalid characters".to_string()));
         }
 
         // Cannot start or end with dot or hyphen
@@ -178,9 +174,7 @@ impl Handle {
 
         // Check length (max 253 characters for domain names)
         if s.len() > 253 {
-            return Err(Error::InvalidHandle(
-                "Handle too long (max 253 characters)".to_string(),
-            ));
+            return Err(Error::InvalidHandle("Handle too long (max 253 characters)".to_string()));
         }
 
         Ok(())
@@ -267,9 +261,7 @@ impl AtUri {
     /// Validate AT URI format
     fn validate(s: &str) -> Result<(), Error> {
         if !s.starts_with("at://") {
-            return Err(Error::InvalidAtUri(
-                "AT URI must start with 'at://'".to_string(),
-            ));
+            return Err(Error::InvalidAtUri("AT URI must start with 'at://'".to_string()));
         }
 
         let without_scheme = s.strip_prefix("at://").unwrap();
@@ -444,7 +436,10 @@ mod tests {
     // AtUri Tests
     #[test]
     fn test_at_uri_with_did_full() {
-        let uri = AtUri::from_str("at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3lniysofyll2d").unwrap();
+        let uri = AtUri::from_str(
+            "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3lniysofyll2d",
+        )
+        .unwrap();
         assert_eq!(uri.authority(), "did:plc:z72i7hdynmk6r22z27h6tvur");
         assert_eq!(uri.collection(), Some("app.bsky.feed.post"));
         assert_eq!(uri.rkey(), Some("3lniysofyll2d"));
@@ -452,7 +447,8 @@ mod tests {
 
     #[test]
     fn test_at_uri_with_handle() {
-        let uri = AtUri::from_str("at://alice.bsky.social/app.bsky.feed.post/3lniysofyll2d").unwrap();
+        let uri =
+            AtUri::from_str("at://alice.bsky.social/app.bsky.feed.post/3lniysofyll2d").unwrap();
         assert_eq!(uri.authority(), "alice.bsky.social");
         assert_eq!(uri.collection(), Some("app.bsky.feed.post"));
         assert_eq!(uri.rkey(), Some("3lniysofyll2d"));
@@ -460,7 +456,8 @@ mod tests {
 
     #[test]
     fn test_at_uri_without_rkey() {
-        let uri = AtUri::from_str("at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post").unwrap();
+        let uri =
+            AtUri::from_str("at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post").unwrap();
         assert_eq!(uri.authority(), "did:plc:z72i7hdynmk6r22z27h6tvur");
         assert_eq!(uri.collection(), Some("app.bsky.feed.post"));
         assert_eq!(uri.rkey(), None);
@@ -577,7 +574,8 @@ impl Tid {
         use std::time::UNIX_EPOCH;
 
         // Get microseconds since Unix epoch
-        let duration = timestamp.duration_since(UNIX_EPOCH)
+        let duration = timestamp
+            .duration_since(UNIX_EPOCH)
             .unwrap_or_else(|_| std::time::Duration::from_secs(0));
         let micros = duration.as_secs() * 1_000_000 + u64::from(duration.subsec_micros());
 
@@ -615,10 +613,7 @@ impl Tid {
         // Verify all characters are in the base32 alphabet
         for ch in s.chars() {
             if !Self::ALPHABET.contains(&(ch as u8)) {
-                return Err(Error::InvalidTid(format!(
-                    "TID contains invalid character: {}",
-                    ch
-                )));
+                return Err(Error::InvalidTid(format!("TID contains invalid character: {}", ch)));
             }
         }
 
@@ -765,7 +760,7 @@ mod tid_tests {
 
     #[test]
     fn test_tid_from_timestamp() {
-        use std::time::{UNIX_EPOCH, Duration};
+        use std::time::{Duration, UNIX_EPOCH};
 
         let timestamp = UNIX_EPOCH + Duration::from_secs(1234567890);
         let tid = Tid::from_timestamp(timestamp);

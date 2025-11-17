@@ -105,10 +105,7 @@ impl SchemaRegistry {
 
     /// Create a new schema registry with custom max depth
     pub fn with_max_depth(max_depth: usize) -> Self {
-        Self {
-            schemas: HashMap::new(),
-            max_depth,
-        }
+        Self { schemas: HashMap::new(), max_depth }
     }
 
     /// Register a schema in the registry
@@ -214,12 +211,13 @@ impl SchemaRegistry {
             .ok_or_else(|| RefResolutionError::SchemaNotFound(nsid.clone()))?;
 
         // Get the definition
-        let def = schema.defs.get(&def_name).ok_or_else(|| {
-            RefResolutionError::DefNotFound {
+        let def = schema
+            .defs
+            .get(&def_name)
+            .ok_or_else(|| RefResolutionError::DefNotFound {
                 nsid: nsid.clone(),
                 def: def_name.clone(),
-            }
-        })?;
+            })?;
 
         // Recursively resolve any refs within the definition
         // Collect all refs from the definition and validate they can be resolved
@@ -472,10 +470,7 @@ mod tests {
     fn test_parse_ref_invalid_no_hash() {
         let result = parse_ref("invalid", "com.example.test");
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            RefResolutionError::InvalidRef(_)
-        ));
+        assert!(matches!(result.unwrap_err(), RefResolutionError::InvalidRef(_)));
     }
 
     #[test]
@@ -563,10 +558,7 @@ mod tests {
 
         let doc1 = LexiconDoc::new("com.example.test1").with_def(
             "main",
-            LexiconDef::Token(LexToken {
-                type_name: "token".to_string(),
-                description: None,
-            }),
+            LexiconDef::Token(LexToken { type_name: "token".to_string(), description: None }),
         );
 
         let doc2 = LexiconDoc::new("com.example.test2");
@@ -584,10 +576,7 @@ mod tests {
 
         let result = registry.resolve_ref("com.example.test", "#main");
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            RefResolutionError::SchemaNotFound(_)
-        ));
+        assert!(matches!(result.unwrap_err(), RefResolutionError::SchemaNotFound(_)));
     }
 
     #[test]
@@ -598,10 +587,7 @@ mod tests {
 
         let result = registry.resolve_ref("com.example.test", "#main");
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            RefResolutionError::DefNotFound { .. }
-        ));
+        assert!(matches!(result.unwrap_err(), RefResolutionError::DefNotFound { .. }));
     }
 
     #[test]
@@ -612,10 +598,7 @@ mod tests {
         // This is a simplified test - actual circular refs would be in the Ref type
         let doc = LexiconDoc::new("com.example.test").with_def(
             "main",
-            LexiconDef::Token(LexToken {
-                type_name: "token".to_string(),
-                description: None,
-            }),
+            LexiconDef::Token(LexToken { type_name: "token".to_string(), description: None }),
         );
 
         registry.register(doc);
@@ -626,10 +609,7 @@ mod tests {
 
         let result = registry.resolve_ref_internal("com.example.test", "#main", &mut visited, 0);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            RefResolutionError::CircularReference(_)
-        ));
+        assert!(matches!(result.unwrap_err(), RefResolutionError::CircularReference(_)));
     }
 
     #[test]
@@ -639,10 +619,7 @@ mod tests {
 
         let result = registry.resolve_ref_internal("com.example.test", "#main", &mut visited, 10);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            RefResolutionError::DepthExceeded { .. }
-        ));
+        assert!(matches!(result.unwrap_err(), RefResolutionError::DepthExceeded { .. }));
     }
 
     #[test]
@@ -884,10 +861,7 @@ mod tests {
         // Validate non-existent schema
         let result = registry.validate_schema("com.example.nonexistent");
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            RefResolutionError::SchemaNotFound(_)
-        ));
+        assert!(matches!(result.unwrap_err(), RefResolutionError::SchemaNotFound(_)));
     }
 
     #[test]
@@ -984,10 +958,7 @@ mod tests {
         // Validate the post schema - should fail because referenced type doesn't exist
         let result = registry.validate_schema("com.example.post");
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            RefResolutionError::SchemaNotFound(_)
-        ));
+        assert!(matches!(result.unwrap_err(), RefResolutionError::SchemaNotFound(_)));
     }
 
     #[test]
@@ -1122,10 +1093,7 @@ mod tests {
         // Validate the union schema - should fail
         let result = registry.validate_schema("com.example.content");
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            RefResolutionError::SchemaNotFound(_)
-        ));
+        assert!(matches!(result.unwrap_err(), RefResolutionError::SchemaNotFound(_)));
     }
 
     #[test]

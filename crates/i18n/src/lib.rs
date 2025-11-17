@@ -6,5 +6,5 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-pub mod translator;
 pub mod lang;
+pub mod translator;

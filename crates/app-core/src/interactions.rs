@@ -215,9 +215,7 @@ pub struct InteractionService {
 impl InteractionService {
     /// Create a new interaction service
     pub fn new(client: XrpcClient) -> Self {
-        Self {
-            client: Arc::new(RwLock::new(client)),
-        }
+        Self { client: Arc::new(RwLock::new(client)) }
     }
 
     /// Like a post
@@ -245,11 +243,7 @@ impl InteractionService {
         }
 
         let now = Utc::now().to_rfc3339();
-        let like_record = LikeRecord {
-            subject: subject.clone(),
-            created_at: now,
-            via,
-        };
+        let like_record = LikeRecord { subject: subject.clone(), created_at: now, via };
 
         let body = serde_json::json!({
             "repo": "self",
@@ -272,8 +266,8 @@ impl InteractionService {
             .await
             .map_err(|e| InteractionError::Xrpc(e.to_string()))?;
 
-        let create_response: CreateRecordResponse = serde_json::from_value(response.data)
-            .map_err(InteractionError::Serialization)?;
+        let create_response: CreateRecordResponse =
+            serde_json::from_value(response.data).map_err(InteractionError::Serialization)?;
 
         Ok(create_response.uri)
     }
@@ -348,11 +342,7 @@ impl InteractionService {
         }
 
         let now = Utc::now().to_rfc3339();
-        let repost_record = RepostRecord {
-            subject: subject.clone(),
-            created_at: now,
-            via,
-        };
+        let repost_record = RepostRecord { subject: subject.clone(), created_at: now, via };
 
         let body = serde_json::json!({
             "repo": "self",
@@ -375,8 +365,8 @@ impl InteractionService {
             .await
             .map_err(|e| InteractionError::Xrpc(e.to_string()))?;
 
-        let create_response: CreateRecordResponse = serde_json::from_value(response.data)
-            .map_err(InteractionError::Serialization)?;
+        let create_response: CreateRecordResponse =
+            serde_json::from_value(response.data).map_err(InteractionError::Serialization)?;
 
         Ok(create_response.uri)
     }
@@ -442,10 +432,7 @@ impl InteractionService {
     pub fn create_quote_embed(&self, subject: &SubjectRef) -> QuoteEmbed {
         QuoteEmbed {
             embed_type: "app.bsky.embed.record".to_string(),
-            record: EmbedRecord {
-                uri: subject.uri.clone(),
-                cid: subject.cid.clone(),
-            },
+            record: EmbedRecord { uri: subject.uri.clone(), cid: subject.cid.clone() },
         }
     }
 }

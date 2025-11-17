@@ -311,8 +311,8 @@ impl FollowingFeed {
             .await
             .map_err(|e| FeedError::ApiError(e.to_string()))?;
 
-        let feed_response: FeedResponse = serde_json::from_value(response.data)
-            .map_err(FeedError::ParseError)?;
+        let feed_response: FeedResponse =
+            serde_json::from_value(response.data).map_err(FeedError::ParseError)?;
 
         Ok(feed_response)
     }
@@ -340,10 +340,7 @@ impl FollowingFeed {
     /// # }
     /// ```
     pub async fn peek_latest(&self) -> Result<Option<FeedViewPost>> {
-        let params = FeedParams {
-            cursor: None,
-            limit: 1,
-        };
+        let params = FeedParams { cursor: None, limit: 1 };
 
         let response = self.fetch(params).await?;
         Ok(response.feed.into_iter().next())
@@ -489,7 +486,11 @@ impl FeedTuner {
                 // Always show self-threads
                 if parent_author.map(|p| p.did == author.did).unwrap_or(true)
                     && root_author.map(|r| r.did == author.did).unwrap_or(true)
-                    && reply.grandparent_author.as_ref().map(|g| g.did == author.did).unwrap_or(true)
+                    && reply
+                        .grandparent_author
+                        .as_ref()
+                        .map(|g| g.did == author.did)
+                        .unwrap_or(true)
                 {
                     return true;
                 }
@@ -502,7 +503,9 @@ impl FeedTuner {
                 }
 
                 if let Some(grandparent) = &reply.grandparent_author {
-                    if grandparent.did != author.did && Self::is_self_or_following(grandparent, user_did) {
+                    if grandparent.did != author.did
+                        && Self::is_self_or_following(grandparent, user_did)
+                    {
                         return true;
                     }
                 }
@@ -519,7 +522,12 @@ impl FeedTuner {
     }
 
     fn is_self_or_following(profile: &ProfileViewBasic, user_did: &str) -> bool {
-        profile.did == user_did || profile.viewer.as_ref().and_then(|v| v.following.as_ref()).is_some()
+        profile.did == user_did
+            || profile
+                .viewer
+                .as_ref()
+                .and_then(|v| v.following.as_ref())
+                .is_some()
     }
 }
 
@@ -565,7 +573,10 @@ pub struct GeneratorView {
     pub like_count: Option<u32>,
 
     /// Whether this feed accepts interactions
-    #[serde(rename = "acceptsInteractions", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "acceptsInteractions",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub accepts_interactions: Option<bool>,
 
     /// Labels applied to the feed
@@ -655,11 +666,7 @@ impl CustomFeed {
         feed_uri: impl Into<String>,
         preferences: FeedPreferences,
     ) -> Self {
-        Self {
-            client,
-            feed_uri: feed_uri.into(),
-            preferences,
-        }
+        Self { client, feed_uri: feed_uri.into(), preferences }
     }
 
     /// Fetch posts from the custom feed
@@ -716,8 +723,8 @@ impl CustomFeed {
             .await
             .map_err(|e| FeedError::ApiError(e.to_string()))?;
 
-        let mut feed_response: FeedResponse = serde_json::from_value(response.data)
-            .map_err(FeedError::ParseError)?;
+        let mut feed_response: FeedResponse =
+            serde_json::from_value(response.data).map_err(FeedError::ParseError)?;
 
         // Some custom feeds fail to enforce pagination limits, so truncate manually
         if feed_response.feed.len() > params.limit as usize {
@@ -734,10 +741,7 @@ impl CustomFeed {
 
     /// Peek at the latest post in the feed
     pub async fn peek_latest(&self) -> Result<Option<FeedViewPost>> {
-        let params = FeedParams {
-            cursor: None,
-            limit: 1,
-        };
+        let params = FeedParams { cursor: None, limit: 1 };
 
         let response = self.fetch(params).await?;
         Ok(response.feed.into_iter().next())
@@ -803,8 +807,8 @@ impl FeedGeneratorService {
     pub async fn get_feed_generator(&self, uri: &str) -> Result<GeneratorView> {
         let client = self.client.read().await;
 
-        let request = atproto_client::XrpcRequest::query("app.bsky.feed.getFeedGenerator")
-            .param("feed", uri);
+        let request =
+            atproto_client::XrpcRequest::query("app.bsky.feed.getFeedGenerator").param("feed", uri);
 
         let response = client
             .query(request)
@@ -816,8 +820,8 @@ impl FeedGeneratorService {
             view: GeneratorView,
         }
 
-        let generator_response: GetFeedGeneratorResponse = serde_json::from_value(response.data)
-            .map_err(FeedError::ParseError)?;
+        let generator_response: GetFeedGeneratorResponse =
+            serde_json::from_value(response.data).map_err(FeedError::ParseError)?;
 
         Ok(generator_response.view)
     }
@@ -842,8 +846,8 @@ impl FeedGeneratorService {
             feeds: Vec<GeneratorView>,
         }
 
-        let generators_response: GetFeedGeneratorsResponse = serde_json::from_value(response.data)
-            .map_err(FeedError::ParseError)?;
+        let generators_response: GetFeedGeneratorsResponse =
+            serde_json::from_value(response.data).map_err(FeedError::ParseError)?;
 
         Ok(generators_response.feeds)
     }
@@ -947,18 +951,16 @@ mod tests {
 
         let root_post = create_test_post("at://did:plc:user/app.bsky.feed.post/1", user_did);
 
-        let posts = vec![
-            FeedViewPost {
-                post: create_test_post("at://did:plc:user/app.bsky.feed.post/2", user_did),
-                reply: Some(ReplyRef {
-                    root: ReplyRefPost::PostView(Box::new(root_post.clone())),
-                    parent: ReplyRefPost::PostView(Box::new(root_post.clone())),
-                    grandparent_author: None,
-                }),
-                reason: None,
-                feed_context: None,
-            },
-        ];
+        let posts = vec![FeedViewPost {
+            post: create_test_post("at://did:plc:user/app.bsky.feed.post/2", user_did),
+            reply: Some(ReplyRef {
+                root: ReplyRefPost::PostView(Box::new(root_post.clone())),
+                parent: ReplyRefPost::PostView(Box::new(root_post.clone())),
+                grandparent_author: None,
+            }),
+            reason: None,
+            feed_context: None,
+        }];
 
         let filtered = tuner.filter_followed_replies_only(posts, user_did);
         // Self-threads should always be shown
@@ -1017,10 +1019,7 @@ mod tests {
         let blocked = ReplyRefPost::BlockedPost(BlockedPost {
             uri: "at://did:plc:xyz/app.bsky.feed.post/1".to_string(),
             blocked: true,
-            author: BlockedAuthor {
-                did: "did:plc:xyz".to_string(),
-                viewer: None,
-            },
+            author: BlockedAuthor { did: "did:plc:xyz".to_string(), viewer: None },
         });
 
         // These should serialize/deserialize correctly
@@ -1101,9 +1100,9 @@ mod tests {
 
     #[test]
     fn test_custom_feed_is_bluesky_owned() {
+        use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
         use std::sync::Arc;
         use tokio::sync::RwLock;
-        use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
 
         let config = XrpcClientConfig::default();
         let client = Arc::new(RwLock::new(XrpcClient::new(config)));
@@ -1127,19 +1126,15 @@ mod tests {
 
     #[test]
     fn test_custom_feed_uri() {
+        use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
         use std::sync::Arc;
         use tokio::sync::RwLock;
-        use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
 
         let config = XrpcClientConfig::default();
         let client = Arc::new(RwLock::new(XrpcClient::new(config)));
         let feed_uri = "at://did:plc:abc/app.bsky.feed.generator/test";
 
-        let feed = CustomFeed::new(
-            client,
-            feed_uri,
-            FeedPreferences::default(),
-        );
+        let feed = CustomFeed::new(client, feed_uri, FeedPreferences::default());
 
         assert_eq!(feed.uri(), feed_uri);
     }

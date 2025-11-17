@@ -370,10 +370,7 @@ mod tests {
             type_name: "string".to_string(),
             description: Some("Test string".to_string()),
             format: Some(StringFormat::AtUri),
-            constraints: StringConstraints {
-                max_length: Some(100),
-                ..Default::default()
-            },
+            constraints: StringConstraints { max_length: Some(100), ..Default::default() },
         });
 
         let json = serde_json::to_value(&lex_string).unwrap();
@@ -411,10 +408,7 @@ mod tests {
                 format: None,
                 constraints: Default::default(),
             })),
-            constraints: ArrayConstraints {
-                max_length: Some(10),
-                min_length: Some(1),
-            },
+            constraints: ArrayConstraints { max_length: Some(10), min_length: Some(1) },
         });
 
         let json = serde_json::to_value(&lex_array).unwrap();

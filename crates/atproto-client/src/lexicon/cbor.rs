@@ -198,10 +198,7 @@ pub struct TypedRecord<T> {
 impl<T> TypedRecord<T> {
     /// Create a new typed record
     pub fn new(record_type: impl Into<String>, data: T) -> Self {
-        Self {
-            record_type: record_type.into(),
-            data,
-        }
+        Self { record_type: record_type.into(), data }
     }
 }
 
@@ -218,10 +215,7 @@ mod tests {
 
     #[test]
     fn test_encode_decode_simple() {
-        let record = SimpleRecord {
-            text: "Hello, World!".to_string(),
-            count: 42,
-        };
+        let record = SimpleRecord { text: "Hello, World!".to_string(), count: 42 };
 
         let bytes = encode_record(&record).unwrap();
         assert!(!bytes.is_empty());
@@ -247,10 +241,7 @@ mod tests {
         let decoded: RecordWithOptional = decode_record(&bytes).unwrap();
         assert_eq!(record, decoded);
 
-        let record_none = RecordWithOptional {
-            text: "Hello".to_string(),
-            optional: None,
-        };
+        let record_none = RecordWithOptional { text: "Hello".to_string(), optional: None };
 
         let bytes = encode_record(&record_none).unwrap();
         let decoded: RecordWithOptional = decode_record(&bytes).unwrap();
@@ -299,10 +290,7 @@ mod tests {
     #[test]
     fn test_cid_link() {
         let cid = CidLink::new("bafyreibjo4xmgaevkgud7mbifn3dzp4v4lyaui4yvqp3f2bqwtxcjrdqg4");
-        assert_eq!(
-            cid.as_str(),
-            "bafyreibjo4xmgaevkgud7mbifn3dzp4v4lyaui4yvqp3f2bqwtxcjrdqg4"
-        );
+        assert_eq!(cid.as_str(), "bafyreibjo4xmgaevkgud7mbifn3dzp4v4lyaui4yvqp3f2bqwtxcjrdqg4");
 
         let bytes = encode_record(&cid).unwrap();
         let decoded: CidLink = decode_record(&bytes).unwrap();
@@ -389,10 +377,7 @@ mod tests {
 
     #[test]
     fn test_deterministic_encoding() {
-        let record = SimpleRecord {
-            text: "Deterministic".to_string(),
-            count: 100,
-        };
+        let record = SimpleRecord { text: "Deterministic".to_string(), count: 100 };
 
         let bytes1 = encode_record(&record).unwrap();
         let bytes2 = encode_record(&record).unwrap();
@@ -455,13 +440,8 @@ mod tests {
         let post = Post {
             text: "Hello @alice.bsky.social!".to_string(),
             facets: Some(vec![Facet {
-                index: Index {
-                    byte_start: 6,
-                    byte_end: 25,
-                },
-                features: vec![Feature::Mention {
-                    did: "did:plc:abc123".to_string(),
-                }],
+                index: Index { byte_start: 6, byte_end: 25 },
+                features: vec![Feature::Mention { did: "did:plc:abc123".to_string() }],
             }]),
             created_at: "2024-01-01T00:00:00Z".to_string(),
         };

@@ -112,7 +112,11 @@ pub(crate) fn is_valid_nsid(nsid: &str) -> bool {
         }
 
         // Must start with a letter
-        if !segment.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+        if !segment
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic())
+        {
             return false;
         }
 
@@ -180,10 +184,7 @@ mod tests {
 
         let result = LexiconDoc::from_json(json);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            LexiconParseError::InvalidVersion(2)
-        ));
+        assert!(matches!(result.unwrap_err(), LexiconParseError::InvalidVersion(2)));
     }
 
     #[test]
@@ -196,10 +197,7 @@ mod tests {
 
         let result = LexiconDoc::from_json(json);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            LexiconParseError::InvalidNsid(_)
-        ));
+        assert!(matches!(result.unwrap_err(), LexiconParseError::InvalidNsid(_)));
     }
 
     #[test]
@@ -208,10 +206,7 @@ mod tests {
 
         let result = LexiconDoc::from_json(json);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            LexiconParseError::InvalidJson(_)
-        ));
+        assert!(matches!(result.unwrap_err(), LexiconParseError::InvalidJson(_)));
     }
 
     #[test]

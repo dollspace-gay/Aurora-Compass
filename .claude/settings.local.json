@@ -36,7 +36,12 @@
       "Bash(bd close:*)",
       "Bash(git remote remove:*)",
       "Bash(git remote add:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(chmod +x \"F:\\Compass\\Aurora-Compass\\scripts\"/*.sh)",
+      "Bash(cd:*)",
+      "Bash(scriptslint.bat:*)",
+      "Bash(scriptsformat.bat)",
+      "Bash(cargo fmt:*)"
     ],
     "deny": [],
     "ask": []

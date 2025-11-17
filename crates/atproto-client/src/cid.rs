@@ -411,18 +411,9 @@ mod tests {
 
         // Generate CIDs for multiple records
         let records = vec![
-            Record {
-                id: 1,
-                value: "first".to_string(),
-            },
-            Record {
-                id: 2,
-                value: "second".to_string(),
-            },
-            Record {
-                id: 3,
-                value: "third".to_string(),
-            },
+            Record { id: 1, value: "first".to_string() },
+            Record { id: 2, value: "second".to_string() },
+            Record { id: 3, value: "third".to_string() },
         ];
 
         let mut cids = Vec::new();

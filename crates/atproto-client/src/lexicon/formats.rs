@@ -140,15 +140,9 @@ mod tests {
 
     #[test]
     fn test_string_format_from_str() {
-        assert_eq!(
-            StringFormat::parse("at-uri"),
-            Some(StringFormat::AtUri)
-        );
+        assert_eq!(StringFormat::parse("at-uri"), Some(StringFormat::AtUri));
         assert_eq!(StringFormat::parse("did"), Some(StringFormat::Did));
-        assert_eq!(
-            StringFormat::parse("handle"),
-            Some(StringFormat::Handle)
-        );
+        assert_eq!(StringFormat::parse("handle"), Some(StringFormat::Handle));
         assert_eq!(StringFormat::parse("invalid"), None);
 
         // Test FromStr trait implementation

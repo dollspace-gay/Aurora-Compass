@@ -318,8 +318,8 @@ mod tests {
             description: Some("Test token".to_string()),
         };
 
-        let doc = LexiconDoc::new("com.example.test")
-            .with_def("testToken", LexiconDef::Token(token));
+        let doc =
+            LexiconDoc::new("com.example.test").with_def("testToken", LexiconDef::Token(token));
 
         assert_eq!(doc.defs.len(), 1);
         assert!(doc.defs.contains_key("testToken"));
@@ -327,10 +327,7 @@ mod tests {
 
     #[test]
     fn test_lexicon_doc_main_def() {
-        let token = LexToken {
-            type_name: "token".to_string(),
-            description: None,
-        };
+        let token = LexToken { type_name: "token".to_string(), description: None };
 
         let doc = LexiconDoc::new("com.example.test")
             .with_def("main", LexiconDef::Token(token.clone()))
@@ -467,16 +464,12 @@ mod tests {
             },
         };
 
-        let doc = LexiconDoc::new("com.example.post")
-            .with_def("main", LexiconDef::Record(record));
+        let doc = LexiconDoc::new("com.example.post").with_def("main", LexiconDef::Record(record));
 
         // Serialize and verify
         let json = serde_json::to_value(&doc).unwrap();
         assert_eq!(json["defs"]["main"]["type"], "record");
         assert_eq!(json["defs"]["main"]["key"], "tid");
-        assert_eq!(
-            json["defs"]["main"]["record"]["properties"]["text"]["maxGraphemes"],
-            300
-        );
+        assert_eq!(json["defs"]["main"]["record"]["properties"]["text"]["maxGraphemes"], 300);
     }
 }

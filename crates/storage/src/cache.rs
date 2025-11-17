@@ -61,12 +61,7 @@ impl<V> CacheEntry<V> {
         let created_at = SystemTime::now();
         let expires_at = ttl.map(|d| created_at + d);
 
-        Self {
-            value,
-            created_at,
-            expires_at,
-            size,
-        }
+        Self { value, created_at, expires_at, size }
     }
 
     fn is_expired(&self) -> bool {
@@ -97,7 +92,7 @@ impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             max_entries: 1000,
-            max_size_bytes: 100 * 1024 * 1024, // 100MB
+            max_size_bytes: 100 * 1024 * 1024,            // 100MB
             default_ttl: Some(Duration::from_secs(3600)), // 1 hour
             enable_disk_cache: false,
             disk_cache_path: None,
@@ -147,7 +142,8 @@ pub struct MemoryCache<V> {
 impl<V: Clone> MemoryCache<V> {
     /// Create a new memory cache
     pub fn new(config: CacheConfig) -> Self {
-        let capacity = NonZeroUsize::new(config.max_entries).unwrap_or(NonZeroUsize::new(1).unwrap());
+        let capacity =
+            NonZeroUsize::new(config.max_entries).unwrap_or(NonZeroUsize::new(1).unwrap());
 
         Self {
             cache: Arc::new(Mutex::new(LruCache::new(capacity))),
@@ -268,7 +264,13 @@ impl<V: Clone> MemoryCache<V> {
         // Collect expired keys
         let expired_keys: Vec<String> = cache
             .iter()
-            .filter_map(|(k, v)| if v.is_expired() { Some(k.clone()) } else { None })
+            .filter_map(|(k, v)| {
+                if v.is_expired() {
+                    Some(k.clone())
+                } else {
+                    None
+                }
+            })
             .collect();
 
         // Remove expired entries
@@ -539,15 +541,15 @@ mod tests {
 
     #[test]
     fn test_memory_cache_size_limit() {
-        let config = CacheConfig::new()
-            .max_entries(100)
-            .max_size_bytes(1000);
+        let config = CacheConfig::new().max_entries(100).max_size_bytes(1000);
 
         let cache: MemoryCache<String> = MemoryCache::new(config);
 
         // Add entries - should respect size limit
         for i in 0..50 {
-            cache.put(format!("key{}", i), "x".repeat(100), None).unwrap();
+            cache
+                .put(format!("key{}", i), "x".repeat(100), None)
+                .unwrap();
         }
 
         // Size should be under limit due to eviction
@@ -556,8 +558,7 @@ mod tests {
 
     #[test]
     fn test_disk_cache() {
-        let config = CacheConfig::new()
-            .with_disk_cache("test_disk_cache.db");
+        let config = CacheConfig::new().with_disk_cache("test_disk_cache.db");
 
         let cache = DiskCache::<String>::new(config).unwrap();
 

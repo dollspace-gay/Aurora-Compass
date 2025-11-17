@@ -109,12 +109,7 @@ pub mod uris {
     /// Generate a random post URI
     pub fn random_post(did: &Did) -> AtUri {
         let tid = Tid::now();
-        AtUri::new(format!(
-            "at://{}/app.bsky.feed.post/{}",
-            did.as_str(),
-            tid.as_str()
-        ))
-        .unwrap()
+        AtUri::new(format!("at://{}/app.bsky.feed.post/{}", did.as_str(), tid.as_str())).unwrap()
     }
 
     /// Create a URI from components
@@ -182,10 +177,7 @@ pub mod strong_refs {
 
     /// Strong ref to Alice's post
     pub fn alice_post() -> StrongRef {
-        StrongRef {
-            uri: uris::alice_post(),
-            cid: cids::post(),
-        }
+        StrongRef { uri: uris::alice_post(), cid: cids::post() }
     }
 
     /// Strong ref to Bob's profile
@@ -215,10 +207,7 @@ pub mod xrpc {
 
     impl TestQuery {
         pub fn new(name: impl Into<String>, value: i32) -> Self {
-            Self {
-                name: name.into(),
-                value,
-            }
+            Self { name: name.into(), value }
         }
     }
 
@@ -231,10 +220,7 @@ pub mod xrpc {
 
     impl TestInput {
         pub fn new(text: impl Into<String>, count: u32) -> Self {
-            Self {
-                text: text.into(),
-                count,
-            }
+            Self { text: text.into(), count }
         }
     }
 
@@ -247,10 +233,7 @@ pub mod xrpc {
 
     impl TestOutput {
         pub fn new(uri: impl Into<String>, cid: impl Into<String>) -> Self {
-            Self {
-                uri: uri.into(),
-                cid: cid.into(),
-            }
+            Self { uri: uri.into(), cid: cid.into() }
         }
     }
 }
@@ -292,12 +275,7 @@ pub mod assertions {
 
     /// Assert that two TIDs are ordered correctly
     pub fn assert_tid_ordering(older: &Tid, newer: &Tid) {
-        assert!(
-            older < newer,
-            "TID {} should be less than {}",
-            older.as_str(),
-            newer.as_str()
-        );
+        assert!(older < newer, "TID {} should be less than {}", older.as_str(), newer.as_str());
     }
 
     /// Assert that a strong ref has matching URI and CID

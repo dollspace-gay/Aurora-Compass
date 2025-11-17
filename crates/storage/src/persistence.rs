@@ -63,11 +63,7 @@ impl<T: Serialize> VersionedState<T> {
         let data_json = serde_json::to_string(&data)?;
         let checksum = format!("{:x}", md5::compute(&data_json));
 
-        Ok(Self {
-            version,
-            checksum,
-            data,
-        })
+        Ok(Self { version, checksum, data })
     }
 
     fn verify_checksum(&self) -> Result<()> {
@@ -115,10 +111,7 @@ impl Default for PersistenceConfig {
 impl PersistenceConfig {
     /// Create a new configuration
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self {
-            path: path.into(),
-            ..Default::default()
-        }
+        Self { path: path.into(), ..Default::default() }
     }
 
     /// Set schema version
@@ -387,9 +380,10 @@ where
         }
 
         // Apply migrations
-        let mut current_data = raw.get("data").cloned().ok_or_else(|| {
-            PersistenceError::Corruption("Missing data field".to_string())
-        })?;
+        let mut current_data = raw
+            .get("data")
+            .cloned()
+            .ok_or_else(|| PersistenceError::Corruption("Missing data field".to_string()))?;
 
         for migration in &self.migrations {
             current_data = migration.migrate(version, current_data)?;
@@ -532,8 +526,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_persisted_state_backup() {
-        let config = PersistenceConfig::new("test_backup.json")
-            .backups(true, 2);
+        let config = PersistenceConfig::new("test_backup.json").backups(true, 2);
 
         let state: PersistedState<TestState> = PersistedState::new(config.clone());
         state.init().await.unwrap();
@@ -562,10 +555,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_versioned_state() {
-        let state = TestState {
-            counter: 42,
-            name: "test".to_string(),
-        };
+        let state = TestState { counter: 42, name: "test".to_string() };
 
         let versioned = VersionedState::new(1, state).unwrap();
         assert_eq!(versioned.version, 1);
@@ -576,8 +566,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_atomic_writes() {
-        let config = PersistenceConfig::new("test_atomic.json")
-            .atomic_writes(true);
+        let config = PersistenceConfig::new("test_atomic.json").atomic_writes(true);
 
         let state: PersistedState<TestState> = PersistedState::new(config.clone());
         state.init().await.unwrap();
@@ -600,7 +589,11 @@ mod tests {
     struct TestMigration;
 
     impl StateMigration for TestMigration {
-        fn migrate(&self, _from_version: u32, mut data: serde_json::Value) -> Result<serde_json::Value> {
+        fn migrate(
+            &self,
+            _from_version: u32,
+            mut data: serde_json::Value,
+        ) -> Result<serde_json::Value> {
             // Example migration: add a default field
             if let Some(obj) = data.as_object_mut() {
                 obj.insert("name".to_string(), serde_json::Value::String("migrated".to_string()));
@@ -611,11 +604,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_migratable_state() {
-        let config = PersistenceConfig::new("test_migration.json")
-            .version(2);
+        let config = PersistenceConfig::new("test_migration.json").version(2);
 
-        let state = MigratableState::<TestState>::new(config)
-            .add_migration(TestMigration);
+        let state = MigratableState::<TestState>::new(config).add_migration(TestMigration);
 
         state.init().await.unwrap();
 

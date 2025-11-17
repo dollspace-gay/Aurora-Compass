@@ -6,7 +6,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-pub mod query;
-pub mod mutation;
-pub mod sync;
 pub mod cache;
+pub mod mutation;
+pub mod query;
+pub mod sync;

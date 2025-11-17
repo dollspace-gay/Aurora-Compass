@@ -200,8 +200,7 @@ impl SessionManager {
     pub async fn new_in_memory() -> Result<Self> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new()
-            .map_err(|e| PersistenceError::Io(e))?;
+        let temp_dir = TempDir::new().map_err(|e| PersistenceError::Io(e))?;
         let path = temp_dir.path().join("test_sessions.json");
 
         // Keep temp_dir alive by leaking it (for tests only)
@@ -904,10 +903,7 @@ mod tests {
 
         let result = manager.remove_account("did:plc:nonexistent").await;
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            SessionManagerError::AccountNotFound(_)
-        ));
+        assert!(matches!(result.unwrap_err(), SessionManagerError::AccountNotFound(_)));
     }
 
     #[tokio::test]
@@ -950,10 +946,7 @@ mod tests {
         {
             let manager = SessionManager::new(&path).await.unwrap();
             assert_eq!(manager.list_accounts().len(), 1);
-            assert_eq!(
-                manager.get_account("did:plc:abc123").unwrap().handle,
-                "alice.bsky.social"
-            );
+            assert_eq!(manager.get_account("did:plc:abc123").unwrap().handle, "alice.bsky.social");
         }
     }
 
@@ -1022,10 +1015,7 @@ mod tests {
 
         let result = manager.switch_account("did:plc:abc123").await;
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            SessionManagerError::InvalidOperation(_)
-        ));
+        assert!(matches!(result.unwrap_err(), SessionManagerError::InvalidOperation(_)));
     }
 
     #[tokio::test]
@@ -1050,9 +1040,6 @@ mod tests {
         let deserialized: SessionStorage = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.accounts.len(), 2);
-        assert_eq!(
-            deserialized.current_account_did,
-            Some("did:plc:abc123".to_string())
-        );
+        assert_eq!(deserialized.current_account_did, Some("did:plc:abc123".to_string()));
     }
 }

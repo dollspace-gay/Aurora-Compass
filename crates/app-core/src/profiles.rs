@@ -281,9 +281,7 @@ impl ProfileService {
     ///
     /// * `client` - XRPC client for making API calls
     pub fn new(client: XrpcClient) -> Self {
-        Self {
-            client: Arc::new(RwLock::new(client)),
-        }
+        Self { client: Arc::new(RwLock::new(client)) }
     }
 
     /// Get a single profile by actor (DID or handle)
@@ -306,8 +304,7 @@ impl ProfileService {
             return Err(ProfileError::InvalidActor("Actor cannot be empty".to_string()));
         }
 
-        let request = XrpcRequest::query("app.bsky.actor.getProfile")
-            .param("actor", actor);
+        let request = XrpcRequest::query("app.bsky.actor.getProfile").param("actor", actor);
 
         let client = self.client.read().await;
         let response = client
@@ -315,8 +312,8 @@ impl ProfileService {
             .await
             .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
 
-        let profile: ProfileViewDetailed = serde_json::from_value(response.data)
-            .map_err(ProfileError::Serialization)?;
+        let profile: ProfileViewDetailed =
+            serde_json::from_value(response.data).map_err(ProfileError::Serialization)?;
 
         Ok(profile)
     }
@@ -357,8 +354,8 @@ impl ProfileService {
             .await
             .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
 
-        let profiles_response: GetProfilesResponse = serde_json::from_value(response.data)
-            .map_err(ProfileError::Serialization)?;
+        let profiles_response: GetProfilesResponse =
+            serde_json::from_value(response.data).map_err(ProfileError::Serialization)?;
 
         Ok(profiles_response.profiles)
     }
@@ -386,8 +383,7 @@ impl ProfileService {
             return Ok(Vec::new());
         }
 
-        let mut request = XrpcRequest::query("app.bsky.actor.searchActors")
-            .param("q", query);
+        let mut request = XrpcRequest::query("app.bsky.actor.searchActors").param("q", query);
 
         if let Some(limit) = limit {
             request = request.param("limit", limit.to_string());
@@ -404,8 +400,8 @@ impl ProfileService {
             actors: Vec<ProfileView>,
         }
 
-        let search_response: SearchResponse = serde_json::from_value(response.data)
-            .map_err(ProfileError::Serialization)?;
+        let search_response: SearchResponse =
+            serde_json::from_value(response.data).map_err(ProfileError::Serialization)?;
 
         Ok(search_response.actors)
     }
@@ -437,8 +433,8 @@ impl ProfileService {
             actors: Vec<ProfileView>,
         }
 
-        let suggestions_response: SuggestionsResponse = serde_json::from_value(response.data)
-            .map_err(ProfileError::Serialization)?;
+        let suggestions_response: SuggestionsResponse =
+            serde_json::from_value(response.data).map_err(ProfileError::Serialization)?;
 
         Ok(suggestions_response.actors)
     }
@@ -497,8 +493,8 @@ impl ProfileService {
             uri: String,
         }
 
-        let create_response: CreateRecordResponse = serde_json::from_value(response.data)
-            .map_err(ProfileError::Serialization)?;
+        let create_response: CreateRecordResponse =
+            serde_json::from_value(response.data).map_err(ProfileError::Serialization)?;
 
         Ok(create_response.uri)
     }
@@ -515,9 +511,7 @@ impl ProfileService {
     /// - `ProfileError::Network` - Network error
     pub async fn unfollow(&self, follow_uri: &str) -> Result<()> {
         if follow_uri.is_empty() {
-            return Err(ProfileError::InvalidActor(
-                "Follow URI cannot be empty".to_string(),
-            ));
+            return Err(ProfileError::InvalidActor("Follow URI cannot be empty".to_string()));
         }
 
         // Parse the AT URI to extract repo and rkey
@@ -664,11 +658,7 @@ mod tests {
             let uri_parts: Vec<&str> = uri.trim_start_matches("at://").split('/').collect();
             // These should all have less than 3 parts
             if !uri.is_empty() && uri != "not-a-uri" {
-                assert!(
-                    uri_parts.len() < 3,
-                    "URI {} should have less than 3 parts",
-                    uri
-                );
+                assert!(uri_parts.len() < 3, "URI {} should have less than 3 parts", uri);
             }
         }
     }

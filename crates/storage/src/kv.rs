@@ -62,10 +62,7 @@ impl Default for KvConfig {
 impl KvConfig {
     /// Create a new configuration with a custom path
     pub fn new(path: impl Into<String>) -> Self {
-        Self {
-            path: path.into(),
-            ..Default::default()
-        }
+        Self { path: path.into(), ..Default::default() }
     }
 
     /// Set cache capacity in bytes
@@ -107,20 +104,14 @@ impl KvStore {
 
         let db = db_config.open()?;
 
-        Ok(Self {
-            db: Arc::new(db),
-            separator: ":",
-        })
+        Ok(Self { db: Arc::new(db), separator: ":" })
     }
 
     /// Create an in-memory key-value store (for testing)
     pub fn in_memory() -> Result<Self> {
         let db = sled::Config::new().temporary(true).open()?;
 
-        Ok(Self {
-            db: Arc::new(db),
-            separator: ":",
-        })
+        Ok(Self { db: Arc::new(db), separator: ":" })
     }
 
     /// Get a value by key
@@ -264,10 +255,7 @@ impl KvStore {
                     .map(|bytes| serde_json::from_slice::<T>(&bytes))
                     .transpose()?;
 
-                Ok(Err(CompareAndSwapError {
-                    current: current_value,
-                    proposed: proposed_value,
-                }))
+                Ok(Err(CompareAndSwapError { current: current_value, proposed: proposed_value }))
             }
         }
     }
@@ -432,10 +420,7 @@ mod tests {
     fn test_set_and_get_struct() {
         let kv = KvStore::in_memory().unwrap();
 
-        let data = TestData {
-            name: "Alice".to_string(),
-            count: 42,
-        };
+        let data = TestData { name: "Alice".to_string(), count: 42 };
 
         kv.set("user", &data).unwrap();
 

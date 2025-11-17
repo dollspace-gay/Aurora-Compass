@@ -365,9 +365,7 @@ impl AuthService {
                     let mut manager = self.session_manager.write().await;
                     manager.refresh_current_session().await?;
 
-                    let account = manager
-                        .current_account()
-                        .ok_or(AuthError::SessionExpired)?;
+                    let account = manager.current_account().ok_or(AuthError::SessionExpired)?;
 
                     return Ok(Some(LoginResult {
                         did: account.did.clone(),
@@ -435,10 +433,7 @@ impl AuthService {
 
         if let Some(account) = manager.current_account() {
             if let Some(access_jwt) = &account.access_jwt {
-                atproto_client::session::is_jwt_expiring_soon(
-                    access_jwt,
-                    Duration::seconds(3600),
-                )
+                atproto_client::session::is_jwt_expiring_soon(access_jwt, Duration::seconds(3600))
             } else {
                 false
             }
