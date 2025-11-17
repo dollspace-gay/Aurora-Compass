@@ -1,3 +1,23 @@
+[package]
+name = "aurora-compass"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[test]]
+name = "phase1_integration"
+path = "tests/phase1_integration.rs"
+
+[dependencies]
+atproto-client = { path = "crates/atproto-client" }
+storage = { path = "crates/storage" }
+app-state = { path = "crates/app-state" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = "3"
+
 [workspace]
 resolver = "2"
 members = [

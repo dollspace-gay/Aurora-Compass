@@ -6,6 +6,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod auth;
 pub mod branding;
 pub mod feeds;
 pub mod messages;
