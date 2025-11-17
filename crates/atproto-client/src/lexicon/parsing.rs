@@ -112,7 +112,7 @@ pub(crate) fn is_valid_nsid(nsid: &str) -> bool {
         }
 
         // Must start with a letter
-        if !segment.chars().next().map_or(false, |c| c.is_ascii_alphabetic()) {
+        if !segment.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
             return false;
         }
 

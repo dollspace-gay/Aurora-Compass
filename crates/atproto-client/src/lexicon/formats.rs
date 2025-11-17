@@ -94,7 +94,7 @@ impl StringFormat {
     }
 
     /// Parse a string format from its string representation
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "at-identifier" => Some(StringFormat::AtIdentifier),
             "at-uri" => Some(StringFormat::AtUri),
@@ -109,6 +109,14 @@ impl StringFormat {
             "language" => Some(StringFormat::Language),
             _ => None,
         }
+    }
+}
+
+impl std::str::FromStr for StringFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or_else(|| format!("Unknown string format: {}", s))
     }
 }
 
@@ -133,15 +141,20 @@ mod tests {
     #[test]
     fn test_string_format_from_str() {
         assert_eq!(
-            StringFormat::from_str("at-uri"),
+            StringFormat::parse("at-uri"),
             Some(StringFormat::AtUri)
         );
-        assert_eq!(StringFormat::from_str("did"), Some(StringFormat::Did));
+        assert_eq!(StringFormat::parse("did"), Some(StringFormat::Did));
         assert_eq!(
-            StringFormat::from_str("handle"),
+            StringFormat::parse("handle"),
             Some(StringFormat::Handle)
         );
-        assert_eq!(StringFormat::from_str("invalid"), None);
+        assert_eq!(StringFormat::parse("invalid"), None);
+
+        // Test FromStr trait implementation
+        use std::str::FromStr;
+        assert!(StringFormat::from_str("at-uri").is_ok());
+        assert!(StringFormat::from_str("invalid").is_err());
     }
 
     #[test]
@@ -178,7 +191,7 @@ mod tests {
 
         for format in formats {
             let s = format.as_str();
-            assert_eq!(StringFormat::from_str(s), Some(format));
+            assert_eq!(StringFormat::parse(s), Some(format));
 
             let json = serde_json::to_string(&format).unwrap();
             let deserialized: StringFormat = serde_json::from_str(&json).unwrap();

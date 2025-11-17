@@ -20,6 +20,7 @@
 //! ```
 
 use super::schema::{LexiconDef, LexiconDoc};
+use super::types::LexType;
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
@@ -220,8 +221,13 @@ impl SchemaRegistry {
             }
         })?;
 
-        // TODO: If the definition is itself a Ref type, recursively resolve it
-        // This would require pattern matching on the LexiconDef enum
+        // Recursively resolve any refs within the definition
+        // Collect all refs from the definition and validate they can be resolved
+        let refs = collect_refs_from_def(def);
+        for ref_str in refs {
+            // Recursively resolve each ref found within the definition
+            self.resolve_ref_internal(&nsid, &ref_str, visited, depth + 1)?;
+        }
 
         Ok(def)
     }
@@ -231,13 +237,19 @@ impl SchemaRegistry {
     /// This validates that all references in the schema can be resolved.
     /// Returns an error if any reference cannot be resolved.
     pub fn validate_schema(&self, nsid: &str) -> Result<()> {
-        let _schema = self
+        let schema = self
             .schemas
             .get(nsid)
             .ok_or_else(|| RefResolutionError::SchemaNotFound(nsid.to_string()))?;
 
-        // TODO: Walk through all definitions and resolve all refs
-        // This would require recursively traversing the LexiconDef structure
+        // Walk through all definitions and resolve all refs
+        for def in schema.defs.values() {
+            let refs = collect_refs_from_def(def);
+            for ref_str in refs {
+                // Attempt to resolve each ref to ensure it's valid
+                self.resolve_ref(nsid, &ref_str)?;
+            }
+        }
 
         Ok(())
     }
@@ -302,6 +314,139 @@ pub fn parse_ref(ref_str: &str, context_nsid: &str) -> Result<(String, String)> 
     };
 
     Ok((nsid, def_name.to_string()))
+}
+
+/// Collect all reference strings from a LexiconDef
+///
+/// This recursively traverses the definition structure and extracts
+/// all reference strings found in any nested types.
+fn collect_refs_from_def(def: &LexiconDef) -> Vec<String> {
+    let mut refs = Vec::new();
+
+    match def {
+        LexiconDef::Record(record) => {
+            // Collect refs from record schema (which is an object)
+            for prop_type in record.record.properties.values() {
+                refs.extend(collect_refs_from_type(prop_type));
+            }
+        }
+        LexiconDef::Query(query) => {
+            // Collect refs from parameters
+            if let Some(params) = &query.parameters {
+                for param_type in params.properties.values() {
+                    refs.extend(collect_refs_from_type(param_type));
+                }
+            }
+            // Collect refs from output body
+            if let Some(output) = &query.output {
+                if let Some(schema) = &output.schema {
+                    refs.extend(collect_refs_from_type(schema));
+                }
+            }
+        }
+        LexiconDef::Procedure(procedure) => {
+            // Collect refs from parameters
+            if let Some(params) = &procedure.parameters {
+                for param_type in params.properties.values() {
+                    refs.extend(collect_refs_from_type(param_type));
+                }
+            }
+            // Collect refs from input body
+            if let Some(input) = &procedure.input {
+                if let Some(schema) = &input.schema {
+                    refs.extend(collect_refs_from_type(schema));
+                }
+            }
+            // Collect refs from output body
+            if let Some(output) = &procedure.output {
+                if let Some(schema) = &output.schema {
+                    refs.extend(collect_refs_from_type(schema));
+                }
+            }
+        }
+        LexiconDef::Subscription(subscription) => {
+            // Collect refs from parameters
+            if let Some(params) = &subscription.parameters {
+                for param_type in params.properties.values() {
+                    refs.extend(collect_refs_from_type(param_type));
+                }
+            }
+            // Collect refs from message schema
+            if let Some(message) = &subscription.message {
+                refs.extend(collect_refs_from_type(message));
+            }
+        }
+        LexiconDef::Object(object) => {
+            // Collect refs from object properties
+            for prop_type in object.properties.values() {
+                refs.extend(collect_refs_from_type(prop_type));
+            }
+        }
+        LexiconDef::Array(array) => {
+            // Collect refs from array items
+            refs.extend(collect_refs_from_type(&array.items));
+        }
+        LexiconDef::Union(union) => {
+            // Union directly contains ref strings
+            refs.extend(union.refs.clone());
+        }
+        // These types don't contain nested refs
+        LexiconDef::Token(_)
+        | LexiconDef::String(_)
+        | LexiconDef::Integer(_)
+        | LexiconDef::Boolean(_)
+        | LexiconDef::Bytes(_)
+        | LexiconDef::CidLink(_)
+        | LexiconDef::Blob(_)
+        | LexiconDef::Unknown(_) => {
+            // No refs in these simple types
+        }
+    }
+
+    refs
+}
+
+/// Collect all reference strings from a LexType
+///
+/// This recursively traverses the type structure and extracts
+/// all reference strings found in any nested types.
+fn collect_refs_from_type(lex_type: &LexType) -> Vec<String> {
+    let mut refs = Vec::new();
+
+    match lex_type {
+        LexType::Ref(ref_type) => {
+            // Found a ref - add it to the collection
+            refs.push(ref_type.ref_to.clone());
+        }
+        LexType::Array(array) => {
+            // Recursively collect refs from array items
+            refs.extend(collect_refs_from_type(&array.items));
+        }
+        LexType::Object(object) => {
+            // Recursively collect refs from object properties
+            for prop_type in object.properties.values() {
+                refs.extend(collect_refs_from_type(prop_type));
+            }
+        }
+        LexType::Union(union) => {
+            // Union directly contains ref strings
+            refs.extend(union.refs.clone());
+        }
+        // These types don't contain nested refs
+        LexType::Null
+        | LexType::Boolean(_)
+        | LexType::Integer(_)
+        | LexType::String(_)
+        | LexType::Bytes(_)
+        | LexType::CidLink(_)
+        | LexType::Blob(_)
+        | LexType::Token(_)
+        | LexType::Unknown(_) => {
+            // No refs in these simple types
+        }
+    }
+
+    refs
 }
 
 #[cfg(test)]
@@ -743,5 +888,315 @@ mod tests {
             result.unwrap_err(),
             RefResolutionError::SchemaNotFound(_)
         ));
+    }
+
+    #[test]
+    fn test_validate_schema_with_refs() {
+        use crate::lexicon::types::{LexObject, LexRefType, LexString, LexType};
+        use std::collections::HashMap;
+
+        let mut registry = SchemaRegistry::new();
+
+        // Create a base type schema
+        let mut string_properties = HashMap::new();
+        string_properties.insert(
+            "value".to_string(),
+            LexType::String(LexString {
+                type_name: "string".to_string(),
+                description: None,
+                format: None,
+                constraints: Default::default(),
+            }),
+        );
+
+        let base_schema = LexiconDoc::new("com.example.types").with_def(
+            "stringValue",
+            LexiconDef::Object(LexObject {
+                type_name: "object".to_string(),
+                description: Some("A string value object".to_string()),
+                properties: string_properties,
+                required: Some(vec!["value".to_string()]),
+                nullable: None,
+            }),
+        );
+
+        // Create a schema that references the base type
+        let mut post_properties = HashMap::new();
+        post_properties.insert(
+            "title".to_string(),
+            LexType::Ref(LexRefType {
+                type_name: "ref".to_string(),
+                description: None,
+                ref_to: "com.example.types#stringValue".to_string(),
+            }),
+        );
+
+        let post_schema = LexiconDoc::new("com.example.post").with_def(
+            "main",
+            LexiconDef::Object(LexObject {
+                type_name: "object".to_string(),
+                description: Some("A post object".to_string()),
+                properties: post_properties,
+                required: Some(vec!["title".to_string()]),
+                nullable: None,
+            }),
+        );
+
+        registry.register(base_schema);
+        registry.register(post_schema);
+
+        // Validate the post schema - should succeed because base type exists
+        let result = registry.validate_schema("com.example.post");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_schema_with_missing_refs() {
+        use crate::lexicon::types::{LexObject, LexRefType, LexType};
+        use std::collections::HashMap;
+
+        let mut registry = SchemaRegistry::new();
+
+        // Create a schema that references a non-existent type
+        let mut post_properties = HashMap::new();
+        post_properties.insert(
+            "title".to_string(),
+            LexType::Ref(LexRefType {
+                type_name: "ref".to_string(),
+                description: None,
+                ref_to: "com.example.missing#stringValue".to_string(),
+            }),
+        );
+
+        let post_schema = LexiconDoc::new("com.example.post").with_def(
+            "main",
+            LexiconDef::Object(LexObject {
+                type_name: "object".to_string(),
+                description: Some("A post object".to_string()),
+                properties: post_properties,
+                required: Some(vec!["title".to_string()]),
+                nullable: None,
+            }),
+        );
+
+        registry.register(post_schema);
+
+        // Validate the post schema - should fail because referenced type doesn't exist
+        let result = registry.validate_schema("com.example.post");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            RefResolutionError::SchemaNotFound(_)
+        ));
+    }
+
+    #[test]
+    fn test_validate_schema_with_nested_refs() {
+        use crate::lexicon::types::{LexArray, LexObject, LexRefType, LexType};
+        use std::collections::HashMap;
+
+        let mut registry = SchemaRegistry::new();
+
+        // Create a base item type
+        let item_schema = LexiconDoc::new("com.example.item").with_def(
+            "main",
+            LexiconDef::Token(LexToken {
+                type_name: "token".to_string(),
+                description: Some("Item".to_string()),
+            }),
+        );
+
+        // Create a schema with nested array of refs
+        let mut collection_properties = HashMap::new();
+        collection_properties.insert(
+            "items".to_string(),
+            LexType::Array(LexArray {
+                type_name: "array".to_string(),
+                description: None,
+                items: Box::new(LexType::Ref(LexRefType {
+                    type_name: "ref".to_string(),
+                    description: None,
+                    ref_to: "com.example.item#main".to_string(),
+                })),
+                constraints: Default::default(),
+            }),
+        );
+
+        let collection_schema = LexiconDoc::new("com.example.collection").with_def(
+            "main",
+            LexiconDef::Object(LexObject {
+                type_name: "object".to_string(),
+                description: Some("Collection of items".to_string()),
+                properties: collection_properties,
+                required: Some(vec!["items".to_string()]),
+                nullable: None,
+            }),
+        );
+
+        registry.register(item_schema);
+        registry.register(collection_schema);
+
+        // Validate the collection schema - should succeed
+        let result = registry.validate_schema("com.example.collection");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_schema_with_union_refs() {
+        use crate::lexicon::types::LexUnion;
+
+        let mut registry = SchemaRegistry::new();
+
+        // Create variant schemas
+        let text_schema = LexiconDoc::new("com.example.text").with_def(
+            "main",
+            LexiconDef::Token(LexToken {
+                type_name: "token".to_string(),
+                description: Some("Text".to_string()),
+            }),
+        );
+
+        let image_schema = LexiconDoc::new("com.example.image").with_def(
+            "main",
+            LexiconDef::Token(LexToken {
+                type_name: "token".to_string(),
+                description: Some("Image".to_string()),
+            }),
+        );
+
+        // Create a union schema
+        let union_schema = LexiconDoc::new("com.example.content").with_def(
+            "main",
+            LexiconDef::Union(LexUnion {
+                type_name: "union".to_string(),
+                description: Some("Content union".to_string()),
+                refs: vec![
+                    "com.example.text#main".to_string(),
+                    "com.example.image#main".to_string(),
+                ],
+                closed: Some(true),
+            }),
+        );
+
+        registry.register(text_schema);
+        registry.register(image_schema);
+        registry.register(union_schema);
+
+        // Validate the union schema - should succeed
+        let result = registry.validate_schema("com.example.content");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_schema_with_union_missing_ref() {
+        use crate::lexicon::types::LexUnion;
+
+        let mut registry = SchemaRegistry::new();
+
+        // Create only one variant schema
+        let text_schema = LexiconDoc::new("com.example.text").with_def(
+            "main",
+            LexiconDef::Token(LexToken {
+                type_name: "token".to_string(),
+                description: Some("Text".to_string()),
+            }),
+        );
+
+        // Create a union schema that references a missing type
+        let union_schema = LexiconDoc::new("com.example.content").with_def(
+            "main",
+            LexiconDef::Union(LexUnion {
+                type_name: "union".to_string(),
+                description: Some("Content union".to_string()),
+                refs: vec![
+                    "com.example.text#main".to_string(),
+                    "com.example.missing#main".to_string(), // This doesn't exist
+                ],
+                closed: Some(true),
+            }),
+        );
+
+        registry.register(text_schema);
+        registry.register(union_schema);
+
+        // Validate the union schema - should fail
+        let result = registry.validate_schema("com.example.content");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            RefResolutionError::SchemaNotFound(_)
+        ));
+    }
+
+    #[test]
+    fn test_recursive_ref_resolution_in_nested_objects() {
+        use crate::lexicon::types::{LexObject, LexRefType, LexType};
+        use std::collections::HashMap;
+
+        let mut registry = SchemaRegistry::new();
+
+        // Create deeply nested type schemas
+        let level3_schema = LexiconDoc::new("com.example.level3").with_def(
+            "main",
+            LexiconDef::Token(LexToken {
+                type_name: "token".to_string(),
+                description: Some("Level 3".to_string()),
+            }),
+        );
+
+        let mut level2_properties = HashMap::new();
+        level2_properties.insert(
+            "nested".to_string(),
+            LexType::Ref(LexRefType {
+                type_name: "ref".to_string(),
+                description: None,
+                ref_to: "com.example.level3#main".to_string(),
+            }),
+        );
+
+        let level2_schema = LexiconDoc::new("com.example.level2").with_def(
+            "main",
+            LexiconDef::Object(LexObject {
+                type_name: "object".to_string(),
+                description: Some("Level 2".to_string()),
+                properties: level2_properties,
+                required: Some(vec!["nested".to_string()]),
+                nullable: None,
+            }),
+        );
+
+        let mut level1_properties = HashMap::new();
+        level1_properties.insert(
+            "nested".to_string(),
+            LexType::Ref(LexRefType {
+                type_name: "ref".to_string(),
+                description: None,
+                ref_to: "com.example.level2#main".to_string(),
+            }),
+        );
+
+        let level1_schema = LexiconDoc::new("com.example.level1").with_def(
+            "main",
+            LexiconDef::Object(LexObject {
+                type_name: "object".to_string(),
+                description: Some("Level 1".to_string()),
+                properties: level1_properties,
+                required: Some(vec!["nested".to_string()]),
+                nullable: None,
+            }),
+        );
+
+        registry.register(level3_schema);
+        registry.register(level2_schema);
+        registry.register(level1_schema);
+
+        // Resolve level1 - should recursively resolve through level2 to level3
+        let result = registry.resolve_ref("com.example.level1", "#main");
+        assert!(result.is_ok());
+
+        // Validate all schemas
+        assert!(registry.validate_schema("com.example.level1").is_ok());
+        assert!(registry.validate_schema("com.example.level2").is_ok());
+        assert!(registry.validate_schema("com.example.level3").is_ok());
     }
 }

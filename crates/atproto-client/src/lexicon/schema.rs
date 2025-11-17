@@ -81,12 +81,16 @@ pub enum RecordKeyType {
     Any,
 }
 
+fn default_record_type() -> String {
+    "record".to_string()
+}
+
 /// Record definition (storable in repository)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexRecord {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_record_type")]
     pub type_name: String,
 
     /// Optional description
@@ -100,12 +104,16 @@ pub struct LexRecord {
     pub record: LexObject,
 }
 
+fn default_params_type() -> String {
+    "params".to_string()
+}
+
 /// Query parameters (HTTP query string params)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexParams {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_params_type")]
     pub type_name: String,
 
     /// Optional description
@@ -149,12 +157,16 @@ pub struct LexXrpcError {
     pub description: Option<String>,
 }
 
+fn default_query_type() -> String {
+    "query".to_string()
+}
+
 /// Query definition (HTTP GET endpoint)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexQuery {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_query_type")]
     pub type_name: String,
 
     /// Optional description
@@ -174,12 +186,16 @@ pub struct LexQuery {
     pub errors: Option<Vec<LexXrpcError>>,
 }
 
+fn default_procedure_type() -> String {
+    "procedure".to_string()
+}
+
 /// Procedure definition (HTTP POST endpoint)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexProcedure {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_procedure_type")]
     pub type_name: String,
 
     /// Optional description
@@ -203,12 +219,16 @@ pub struct LexProcedure {
     pub errors: Option<Vec<LexXrpcError>>,
 }
 
+fn default_subscription_type() -> String {
+    "subscription".to_string()
+}
+
 /// Subscription definition (WebSocket event stream)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexSubscription {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_subscription_type")]
     pub type_name: String,
 
     /// Optional description
@@ -395,10 +415,26 @@ mod tests {
         assert_eq!(json["id"], "com.example.test");
         assert_eq!(json["defs"]["main"]["type"], "token");
 
-        // Note: Full round-trip will be fixed when addressing serde tagged enum structure
-        // For now, just verify serialization works
-        let _serialized = serde_json::to_string(&doc).unwrap();
-        // TODO: Fix deserialization in Aurora-Compass-yz4 (JSON parsing)
+        // Test full round-trip serialization/deserialization
+        let serialized = serde_json::to_string(&doc).unwrap();
+        let deserialized: LexiconDoc = serde_json::from_str(&serialized).unwrap();
+
+        // Verify the deserialized doc matches the original
+        assert_eq!(deserialized.lexicon, doc.lexicon);
+        assert_eq!(deserialized.id, doc.id);
+        assert_eq!(deserialized.revision, doc.revision);
+        assert_eq!(deserialized.description, doc.description);
+        assert_eq!(deserialized.defs.len(), doc.defs.len());
+
+        // Verify the definition was deserialized correctly
+        let def = deserialized.defs.get("main").unwrap();
+        match def {
+            LexiconDef::Token(token) => {
+                assert_eq!(token.type_name, "token");
+                assert_eq!(token.description, None);
+            }
+            _ => panic!("Expected Token definition, got {:?}", def),
+        }
     }
 
     #[test]

@@ -40,12 +40,16 @@ impl LexRef {
     }
 }
 
+fn default_ref_type() -> String {
+    "ref".to_string()
+}
+
 /// String type with optional format and constraints
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexString {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_string_type")]
     pub type_name: String,
 
     /// Optional description
@@ -61,12 +65,16 @@ pub struct LexString {
     pub constraints: StringConstraints,
 }
 
+fn default_string_type() -> String {
+    "string".to_string()
+}
+
 /// Integer type with constraints
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexInteger {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_integer_type")]
     pub type_name: String,
 
     /// Optional description
@@ -78,12 +86,16 @@ pub struct LexInteger {
     pub constraints: IntegerConstraints,
 }
 
+fn default_integer_type() -> String {
+    "integer".to_string()
+}
+
 /// Boolean type with constraints
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexBoolean {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_boolean_type")]
     pub type_name: String,
 
     /// Optional description
@@ -95,12 +107,16 @@ pub struct LexBoolean {
     pub constraints: BooleanConstraints,
 }
 
+fn default_boolean_type() -> String {
+    "boolean".to_string()
+}
+
 /// Bytes type (base64-encoded binary data)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexBytes {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_bytes_type")]
     pub type_name: String,
 
     /// Optional description
@@ -112,12 +128,16 @@ pub struct LexBytes {
     pub constraints: BytesConstraints,
 }
 
+fn default_bytes_type() -> String {
+    "bytes".to_string()
+}
+
 /// CID link type
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexCidLink {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_cid_link_type")]
     pub type_name: String,
 
     /// Optional description
@@ -125,12 +145,16 @@ pub struct LexCidLink {
     pub description: Option<String>,
 }
 
+fn default_cid_link_type() -> String {
+    "cid-link".to_string()
+}
+
 /// Blob type (binary data with metadata)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexBlob {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_blob_type")]
     pub type_name: String,
 
     /// Optional description
@@ -142,12 +166,16 @@ pub struct LexBlob {
     pub constraints: BlobConstraints,
 }
 
+fn default_blob_type() -> String {
+    "blob".to_string()
+}
+
 /// Array type
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexArray {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_array_type")]
     pub type_name: String,
 
     /// Optional description
@@ -162,12 +190,16 @@ pub struct LexArray {
     pub constraints: ArrayConstraints,
 }
 
+fn default_array_type() -> String {
+    "array".to_string()
+}
+
 /// Token type (named symbolic value with no data representation)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexToken {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_token_type")]
     pub type_name: String,
 
     /// Optional description
@@ -175,12 +207,16 @@ pub struct LexToken {
     pub description: Option<String>,
 }
 
+fn default_token_type() -> String {
+    "token".to_string()
+}
+
 /// Object type with properties
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexObject {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_object_type")]
     pub type_name: String,
 
     /// Optional description
@@ -200,12 +236,16 @@ pub struct LexObject {
     pub nullable: Option<Vec<String>>,
 }
 
+fn default_object_type() -> String {
+    "object".to_string()
+}
+
 /// Union type (one of several possible types)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexUnion {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_union_type")]
     pub type_name: String,
 
     /// Optional description
@@ -220,12 +260,16 @@ pub struct LexUnion {
     pub closed: Option<bool>,
 }
 
+fn default_union_type() -> String {
+    "union".to_string()
+}
+
 /// Unknown type (accepts any value)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexUnknown {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_unknown_type")]
     pub type_name: String,
 
     /// Optional description
@@ -233,12 +277,16 @@ pub struct LexUnknown {
     pub description: Option<String>,
 }
 
+fn default_unknown_type() -> String {
+    "unknown".to_string()
+}
+
 /// Reference to another definition
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LexRefType {
     /// Type discriminator
-    #[serde(skip)]
+    #[serde(skip_deserializing, default = "default_ref_type")]
     pub type_name: String,
 
     /// Optional description

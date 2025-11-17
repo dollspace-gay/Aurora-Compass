@@ -26,6 +26,7 @@ use super::constraints::*;
 use super::formats::StringFormat;
 use super::types::LexString;
 use thiserror::Error;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Errors that can occur during validation
 #[derive(Debug, Error, PartialEq)]
@@ -441,9 +442,7 @@ fn validate_string_constraints(value: &str, constraints: &StringConstraints) -> 
     }
 
     // Check grapheme count (Unicode grapheme clusters)
-    // For now, use char count as approximation
-    // TODO: Use unicode-segmentation crate for proper grapheme counting
-    let grapheme_count = value.chars().count();
+    let grapheme_count = value.graphemes(true).count();
     if let Some(max) = constraints.max_graphemes {
         if grapheme_count > max {
             return Err(ValidationError::TooManyGraphemes {
@@ -702,5 +701,107 @@ mod tests {
     #[test]
     fn test_validate_at_identifier_handle() {
         assert!(validate_at_identifier("user.bsky.social").is_ok());
+    }
+
+    #[test]
+    fn test_validate_string_grapheme_count_ascii() {
+        let constraints = StringConstraints {
+            max_graphemes: Some(5),
+            min_graphemes: Some(2),
+            ..Default::default()
+        };
+
+        // ASCII strings - grapheme count equals char count
+        assert!(validate_string_constraints("hello", &constraints).is_ok()); // 5 graphemes
+        assert!(validate_string_constraints("hi", &constraints).is_ok()); // 2 graphemes
+        assert!(validate_string_constraints("h", &constraints).is_err()); // Too few
+        assert!(validate_string_constraints("toolong", &constraints).is_err()); // Too many
+    }
+
+    #[test]
+    fn test_validate_string_grapheme_count_emoji() {
+        let constraints = StringConstraints {
+            max_graphemes: Some(3),
+            min_graphemes: Some(1),
+            ..Default::default()
+        };
+
+        // Single emoji counts as 1 grapheme even if multiple code points
+        assert!(validate_string_constraints("👍", &constraints).is_ok()); // 1 grapheme
+        assert!(validate_string_constraints("🎉", &constraints).is_ok()); // 1 grapheme
+        assert!(validate_string_constraints("👍🎉", &constraints).is_ok()); // 2 graphemes
+        assert!(validate_string_constraints("👍🎉❤", &constraints).is_ok()); // 3 graphemes
+        assert!(validate_string_constraints("👍🎉❤️🔥", &constraints).is_err()); // 4 graphemes - too many
+    }
+
+    #[test]
+    fn test_validate_string_grapheme_count_combining_characters() {
+        let constraints = StringConstraints {
+            max_graphemes: Some(5),
+            min_graphemes: Some(1),
+            ..Default::default()
+        };
+
+        // é can be represented as single code point or e + combining acute accent
+        // Both should count as 1 grapheme
+        assert!(validate_string_constraints("café", &constraints).is_ok()); // 4 graphemes
+
+        // Multiple combining marks should still count as single grapheme
+        assert!(validate_string_constraints("e\u{0301}", &constraints).is_ok()); // e + combining acute = 1 grapheme
+        assert!(validate_string_constraints("e\u{0301}\u{0302}", &constraints).is_ok()); // e + two combining marks = 1 grapheme
+    }
+
+    #[test]
+    fn test_validate_string_grapheme_count_complex_emoji() {
+        let constraints = StringConstraints {
+            max_graphemes: Some(5),
+            min_graphemes: Some(1),
+            ..Default::default()
+        };
+
+        // Emoji with skin tone modifier - should count as 1 grapheme
+        assert!(validate_string_constraints("👍🏻", &constraints).is_ok()); // 1 grapheme
+        assert!(validate_string_constraints("👍🏾", &constraints).is_ok()); // 1 grapheme
+
+        // Family emoji (multiple code points joined with ZWJ) - should count as 1 grapheme
+        assert!(validate_string_constraints("👨‍👩‍👧‍👦", &constraints).is_ok()); // 1 grapheme
+
+        // Flag emoji (regional indicator symbols) - should count as 1 grapheme
+        assert!(validate_string_constraints("🇺🇸", &constraints).is_ok()); // 1 grapheme
+    }
+
+    #[test]
+    fn test_validate_string_grapheme_count_mixed_content() {
+        let constraints = StringConstraints {
+            max_graphemes: Some(10),
+            min_graphemes: Some(1),
+            ..Default::default()
+        };
+
+        // Mix of ASCII, emoji, and combining characters
+        assert!(validate_string_constraints("Hello 👋", &constraints).is_ok()); // 7 graphemes: H-e-l-l-o-space-wave
+        assert!(validate_string_constraints("café ☕", &constraints).is_ok()); // 6 graphemes
+        assert!(validate_string_constraints("🎉Party🎊", &constraints).is_ok()); // 7 graphemes
+    }
+
+    #[test]
+    fn test_validate_string_grapheme_vs_char_count() {
+        let constraints = StringConstraints {
+            max_graphemes: Some(2),
+            min_graphemes: Some(1),
+            ..Default::default()
+        };
+
+        // This string has 3 chars but only 1 grapheme (e + two combining marks)
+        let string_with_combining = "e\u{0301}\u{0302}";
+        assert_eq!(string_with_combining.chars().count(), 3); // 3 chars
+        assert_eq!(string_with_combining.graphemes(true).count(), 1); // 1 grapheme
+        assert!(validate_string_constraints(string_with_combining, &constraints).is_ok());
+
+        // This emoji has many code points but is 1 grapheme
+        let family_emoji = "👨‍👩‍👧‍👦";
+        assert!(family_emoji.chars().count() > 1); // Multiple chars
+        assert_eq!(family_emoji.graphemes(true).count(), 1); // 1 grapheme
+        assert!(validate_string_constraints(family_emoji, &constraints).is_ok());
     }
 }
