@@ -1,54 +1,97 @@
-# Custom AppView Test Client
+# Aurora Compass
 
-Modified Bluesky web client for testing custom AppViews.
+A Rust-based Bluesky client fork with optional moderation and custom AppView support.
 
-## Quick Start
+**See [BRANDING.md](BRANDING.md) for branding guidelines and design philosophy.**
+
+## Quick Start (Development)
 
 ```bash
-# 1. Install dependencies
-yarn install
+# 1. Build the Rust workspace
+cargo build
 
-# 2. Edit .env if needed (defaults to localhost:3000)
+# 2. Run tests
+cargo test
 
-# 3. Start the dev server
-yarn web
+# 3. Run a specific crate
+cargo run -p app-core
 ```
 
-Opens at `http://localhost:19006`
+## Project Structure
 
-## Configuration (.env)
+```
+crates/
+├── atproto-client/     # AT Protocol SDK
+├── app-core/           # Business logic & branding
+├── app-state/          # State management
+├── app-ui/             # User interface
+├── app-platform/       # Platform-specific code
+├── media-processing/   # Image/video processing
+├── moderation/         # Content filtering
+├── networking/         # HTTP client
+├── storage/            # Database & cache
+└── i18n/               # Internationalization
 
-```env
-EXPO_PUBLIC_USE_CUSTOM_APPVIEW=true
-EXPO_PUBLIC_CUSTOM_APPVIEW_URL=http://localhost:3000
-EXPO_PUBLIC_CUSTOM_APPVIEW_DID=did:web:localhost:3000
-EXPO_PUBLIC_CUSTOM_APP_NAME=AppView Test Client
-EXPO_PUBLIC_CUSTOM_PDS_URL=https://bsky.social
-EXPO_PUBLIC_CUSTOM_PDS_DID=did:web:bsky.social
+original-bluesky/       # Original TypeScript client (for reference)
 ```
 
-**Important:** Restart dev server after changing `.env`
+## Key Features
 
-## What Was Changed
+### What Makes Aurora Compass Different?
 
-- `src/lib/constants.ts` - Added custom AppView/PDS support
-- `.env` - Configuration for your AppView
-- `package.json` - Changed name to avoid confusion
+1. **Optional Moderation**
+   - Unlike official Bluesky, labeler subscription is **optional**
+   - Users choose which moderation services to use
+   - Full control over content filtering
 
-## How It Works
+2. **Custom AppView Per User**
+   - Each account can specify their own AppView endpoint
+   - Not limited to bsky.social
+   - Configure in Settings → Advanced → AppView URL
 
-When `USE_CUSTOM_APPVIEW=true`:
-- **Read queries** (timeline, profiles) → Your AppView
-- **Authentication** → Your PDS (default: Bluesky's)
-- **Writes** (posts, likes) → User's PDS
+3. **Same Great UX**
+   - Maintains the exact UI/UX of the original Bluesky client
+   - Reference implementation in `original-bluesky/`
+   - Custom branding only (logo, name, colors)
 
-## Testing
+## Development
 
-1. **Start your AppView** on port 3000
-2. **Start this client**: `yarn web`
-3. **Login** with Bluesky account
-4. **Browse** - data comes from your AppView!
+### Issue Tracking
 
-## Switching Back
+We use [bd](https://github.com/josephg/bd) for issue tracking:
 
-Set `EXPO_PUBLIC_USE_CUSTOM_APPVIEW=false` to use official Bluesky.
+```bash
+# View ready work
+bd ready
+
+# View all issues
+bd list
+
+# View issue details
+bd show Aurora-Compass-xxx
+
+# Update issue status
+bd update Aurora-Compass-xxx --status in_progress
+```
+
+Current status: **123 issues** (122 open, 1 closed, 91 ready to work)
+
+### Development Guidelines
+
+See [CLAUDE.md](CLAUDE.md) for comprehensive development guidelines:
+- No stubs or `unimplemented!()` macros
+- Complete implementations only
+- Comprehensive testing required
+- Follow Rust best practices
+
+### Branding
+
+See [BRANDING.md](BRANDING.md) for:
+- Logo usage guidelines
+- Brand colors
+- Application naming
+- Design philosophy
+
+## License
+
+MIT License - See [LICENSE](LICENSE)

@@ -16,7 +16,13 @@
       "Bash(bd epic status:*)",
       "Bash(cargo build:*)",
       "Bash(cargo test:*)",
-      "Bash(bd update:*)"
+      "Bash(bd update:*)",
+      "Bash(bd show:*)",
+      "Bash(bd comment Aurora-Compass-l4m \"IMPORTANT: Use logo.png from root directory. Maintain original Bluesky UI/UX - same look and feel, just different branding.\")",
+      "Bash(bd comment Aurora-Compass-zw1 \"KEY DIFFERENCE: Labeler subscription is optional, not forced. Users have full control over which moderation services they use.\")",
+      "Bash(bd comment Aurora-Compass-1h2 \"IMPORTANT: Support custom AppView configuration per user. Each account can specify their own AppView endpoint, not just bsky.social.\")",
+      "Bash(bd comment Aurora-Compass-hdr \"Each session should store the custom AppView URL preference. Users can set different AppView endpoints per account.\")",
+      "Bash(bd comment:*)"
     ],
     "deny": [],
     "ask": []

@@ -6,8 +6,9 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod branding;
 pub mod feeds;
-pub mod profiles;
-pub mod posts;
 pub mod messages;
 pub mod notifications;
+pub mod posts;
+pub mod profiles;
