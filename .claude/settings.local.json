@@ -27,7 +27,10 @@
       "Bash(cargo fix:*)",
       "Bash(find:*)",
       "Bash(cargo clippy:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(dir:*)",
+      "Bash(bd dep tree:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []
