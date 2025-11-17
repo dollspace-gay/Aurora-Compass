@@ -26,7 +26,8 @@
       "Bash(nul)",
       "Bash(cargo fix:*)",
       "Bash(find:*)",
-      "Bash(cargo clippy:*)"
+      "Bash(cargo clippy:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

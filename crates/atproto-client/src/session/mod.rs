@@ -5,6 +5,7 @@
 //! - Session state management
 //! - Token refresh flows
 //! - Session persistence
+//! - Multi-account support
 //!
 //! # Example
 //!
@@ -31,6 +32,10 @@
 //! // Check if session is expired
 //! let expired = is_session_expired(&account);
 //! ```
+
+mod manager;
+
+pub use manager::{SessionManager, SessionManagerError, SessionStorage};
 
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};

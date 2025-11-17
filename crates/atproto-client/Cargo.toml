@@ -16,6 +16,9 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 
+# Internal workspace crates
+storage = { path = "../storage" }
+
 # AT Protocol specific
 serde_ipld_dagcbor = "0.6"
 cid = "0.11"
@@ -35,3 +38,4 @@ unicode-segmentation = "1.12"
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros"] }
 wiremock = "0.6"
+tempfile = "3"
