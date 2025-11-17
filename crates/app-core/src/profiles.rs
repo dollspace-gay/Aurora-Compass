@@ -4,6 +4,7 @@
 //! including fetching profile data, stats, and profile-related operations.
 
 use atproto_client::xrpc::{XrpcClient, XrpcRequest};
+use chrono;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
@@ -441,6 +442,113 @@ impl ProfileService {
 
         Ok(suggestions_response.actors)
     }
+
+    /// Follow a user
+    ///
+    /// # Arguments
+    ///
+    /// * `did` - DID of the user to follow
+    ///
+    /// # Returns
+    ///
+    /// URI of the follow record created
+    ///
+    /// # Errors
+    ///
+    /// - `ProfileError::NoSession` - No active session
+    /// - `ProfileError::Network` - Network error
+    pub async fn follow(&self, did: &str) -> Result<String> {
+        if did.is_empty() {
+            return Err(ProfileError::InvalidActor("DID cannot be empty".to_string()));
+        }
+
+        #[derive(Serialize)]
+        struct FollowRecord {
+            subject: String,
+            #[serde(rename = "createdAt")]
+            created_at: String,
+            #[serde(rename = "$type")]
+            record_type: String,
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let record = FollowRecord {
+            subject: did.to_string(),
+            created_at: now,
+            record_type: "app.bsky.graph.follow".to_string(),
+        };
+
+        // Create follow record via XRPC
+        let request = XrpcRequest::procedure("com.atproto.repo.createRecord")
+            .json_body(&serde_json::json!({
+                "collection": "app.bsky.graph.follow",
+                "record": record,
+            }))
+            .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
+
+        let client = self.client.read().await;
+        let response = client
+            .procedure(request)
+            .await
+            .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
+
+        #[derive(Deserialize)]
+        struct CreateRecordResponse {
+            uri: String,
+        }
+
+        let create_response: CreateRecordResponse = serde_json::from_value(response.data)
+            .map_err(ProfileError::Serialization)?;
+
+        Ok(create_response.uri)
+    }
+
+    /// Unfollow a user
+    ///
+    /// # Arguments
+    ///
+    /// * `follow_uri` - URI of the follow record to delete
+    ///
+    /// # Errors
+    ///
+    /// - `ProfileError::NoSession` - No active session
+    /// - `ProfileError::Network` - Network error
+    pub async fn unfollow(&self, follow_uri: &str) -> Result<()> {
+        if follow_uri.is_empty() {
+            return Err(ProfileError::InvalidActor(
+                "Follow URI cannot be empty".to_string(),
+            ));
+        }
+
+        // Parse the AT URI to extract repo and rkey
+        // Format: at://did:plc:xyz/app.bsky.graph.follow/rkey
+        let uri_parts: Vec<&str> = follow_uri.trim_start_matches("at://").split('/').collect();
+        if uri_parts.len() < 3 {
+            return Err(ProfileError::InvalidActor(format!(
+                "Invalid follow URI format: {}",
+                follow_uri
+            )));
+        }
+
+        let repo = uri_parts[0];
+        let rkey = uri_parts[2];
+
+        let request = XrpcRequest::procedure("com.atproto.repo.deleteRecord")
+            .json_body(&serde_json::json!({
+                "repo": repo,
+                "collection": "app.bsky.graph.follow",
+                "rkey": rkey,
+            }))
+            .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
+
+        let client = self.client.read().await;
+        client
+            .procedure::<serde_json::Value>(request)
+            .await
+            .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -527,5 +635,65 @@ mod tests {
     fn test_profile_not_found_error() {
         let error = ProfileError::NotFound("alice.bsky.social".to_string());
         assert!(error.to_string().contains("Profile not found"));
+    }
+
+    #[test]
+    fn test_follow_uri_parsing() {
+        // Test valid follow URI parsing for unfollow
+        let uri = "at://did:plc:abc123/app.bsky.graph.follow/3jzfcijpj2z2a";
+        let uri_parts: Vec<&str> = uri.trim_start_matches("at://").split('/').collect();
+
+        assert_eq!(uri_parts.len(), 3);
+        assert_eq!(uri_parts[0], "did:plc:abc123");
+        assert_eq!(uri_parts[1], "app.bsky.graph.follow");
+        assert_eq!(uri_parts[2], "3jzfcijpj2z2a");
+    }
+
+    #[test]
+    fn test_invalid_follow_uri() {
+        // Test that invalid URIs would be rejected
+        let invalid_uris = vec![
+            "",
+            "at://",
+            "at://did:plc:abc123",
+            "at://did:plc:abc123/app.bsky.graph.follow",
+            "not-a-uri",
+        ];
+
+        for uri in invalid_uris {
+            let uri_parts: Vec<&str> = uri.trim_start_matches("at://").split('/').collect();
+            // These should all have less than 3 parts
+            if !uri.is_empty() && uri != "not-a-uri" {
+                assert!(
+                    uri_parts.len() < 3,
+                    "URI {} should have less than 3 parts",
+                    uri
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_follow_record_serialization() {
+        #[derive(Serialize)]
+        struct FollowRecord {
+            subject: String,
+            #[serde(rename = "createdAt")]
+            created_at: String,
+            #[serde(rename = "$type")]
+            record_type: String,
+        }
+
+        let record = FollowRecord {
+            subject: "did:plc:test123".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            record_type: "app.bsky.graph.follow".to_string(),
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(json.contains("did:plc:test123"));
+        assert!(json.contains("createdAt"));
+        assert!(json.contains("$type"));
+        assert!(json.contains("app.bsky.graph.follow"));
     }
 }
