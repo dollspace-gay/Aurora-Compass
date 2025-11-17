@@ -12,6 +12,9 @@ pub mod session;
 pub mod types;
 pub mod xrpc;
 
+#[cfg(test)]
+mod test_utils;
+
 pub use agent::BskyAgent;
 pub use types::{AtUri, Did, Handle, StrongRef, Tid};
 pub use xrpc::{
