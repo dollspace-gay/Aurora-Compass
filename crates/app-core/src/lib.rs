@@ -7,6 +7,7 @@
 #![warn(clippy::all)]
 
 pub mod auth;
+pub mod autocomplete;
 pub mod branding;
 pub mod editor;
 pub mod feeds;
