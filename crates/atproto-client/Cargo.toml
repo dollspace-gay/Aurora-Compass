@@ -30,3 +30,4 @@ chrono = { version = "0.4", features = ["serde"] }
 [dev-dependencies]
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros"] }
+wiremock = "0.6"

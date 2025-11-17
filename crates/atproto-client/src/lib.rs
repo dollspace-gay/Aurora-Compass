@@ -14,6 +14,10 @@ pub mod xrpc;
 
 pub use agent::BskyAgent;
 pub use types::{AtUri, Did, Handle, StrongRef, Tid};
+pub use xrpc::{
+    network_retry, retry, HttpMethod, RetryConfig, XrpcClient, XrpcClientConfig, XrpcError,
+    XrpcErrorResponse, XrpcRequest, XrpcResponse,
+};
 
 /// Result type for AT Protocol operations
 pub type Result<T> = std::result::Result<T, Error>;
