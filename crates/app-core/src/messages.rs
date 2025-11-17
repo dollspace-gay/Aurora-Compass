@@ -517,6 +517,305 @@ impl ConversationService {
     }
 }
 
+/// Sort order for conversations in inbox
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversationSortBy {
+    /// Sort by most recent activity (default)
+    Recent,
+    /// Sort by unread count (unread first)
+    Unread,
+    /// Sort alphabetically by participant name
+    Name,
+}
+
+/// Filter options for inbox conversations
+#[derive(Debug, Clone, Default)]
+pub struct InboxFilter {
+    /// Show only conversations with unread messages
+    pub only_unread: bool,
+    /// Exclude muted conversations
+    pub exclude_muted: bool,
+    /// Search query to filter by participant name or message content
+    pub search_query: Option<String>,
+}
+
+/// Statistics about the inbox
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InboxStats {
+    /// Total number of conversations
+    pub total_conversations: usize,
+    /// Number of conversations with unread messages
+    pub unread_conversations: usize,
+    /// Total unread message count
+    pub total_unread: u32,
+}
+
+/// Inbox view for managing conversations
+///
+/// Provides sorting, filtering, and preview generation for conversation lists.
+///
+/// # Example
+///
+/// ```rust
+/// use app_core::messages::{InboxView, Conversation, ConversationSortBy, InboxFilter};
+///
+/// let conversations = vec![/* your conversations */];
+/// let mut inbox = InboxView::new(conversations);
+///
+/// // Sort by most recent
+/// inbox.sort_by(ConversationSortBy::Recent);
+///
+/// // Filter to show only unread
+/// let filter = InboxFilter {
+///     only_unread: true,
+///     ..Default::default()
+/// };
+/// let unread = inbox.filter(&filter);
+///
+/// // Get stats
+/// let stats = inbox.stats();
+/// println!("Total unread: {}", stats.total_unread);
+/// ```
+pub struct InboxView {
+    conversations: Vec<Conversation>,
+}
+
+impl InboxView {
+    /// Create a new inbox view
+    pub fn new(conversations: Vec<Conversation>) -> Self {
+        Self { conversations }
+    }
+
+    /// Get all conversations
+    pub fn conversations(&self) -> &[Conversation] {
+        &self.conversations
+    }
+
+    /// Get a mutable reference to conversations
+    pub fn conversations_mut(&mut self) -> &mut Vec<Conversation> {
+        &mut self.conversations
+    }
+
+    /// Sort conversations by the specified criterion
+    pub fn sort_by(&mut self, sort_by: ConversationSortBy) {
+        match sort_by {
+            ConversationSortBy::Recent => {
+                self.conversations
+                    .sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+            }
+            ConversationSortBy::Unread => {
+                self.conversations.sort_by(|a, b| {
+                    // First sort by unread status (unread first)
+                    match (a.has_unread(), b.has_unread()) {
+                        (true, false) => std::cmp::Ordering::Less,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        _ => {
+                            // Then by unread count (descending)
+                            match b.unread_count.cmp(&a.unread_count) {
+                                std::cmp::Ordering::Equal => {
+                                    // Finally by most recent
+                                    b.updated_at.cmp(&a.updated_at)
+                                }
+                                other => other,
+                            }
+                        }
+                    }
+                });
+            }
+            ConversationSortBy::Name => {
+                self.conversations.sort_by(|a, b| {
+                    let name_a = a.other_participant_name().unwrap_or_default().to_lowercase();
+                    let name_b = b.other_participant_name().unwrap_or_default().to_lowercase();
+                    name_a.cmp(&name_b)
+                });
+            }
+        }
+    }
+
+    /// Filter conversations based on criteria
+    pub fn filter(&self, filter: &InboxFilter) -> Vec<&Conversation> {
+        self.conversations
+            .iter()
+            .filter(|conv| {
+                // Filter by unread status
+                if filter.only_unread && !conv.has_unread() {
+                    return false;
+                }
+
+                // Filter by muted status
+                if filter.exclude_muted && conv.muted {
+                    return false;
+                }
+
+                // Filter by search query
+                if let Some(query) = &filter.search_query {
+                    let query_lower = query.to_lowercase();
+
+                    // Search in participant names
+                    let name_match = conv.members.iter().any(|member| {
+                        member
+                            .display_name
+                            .as_ref()
+                            .map(|n| n.to_lowercase().contains(&query_lower))
+                            .unwrap_or(false)
+                            || member.handle.to_lowercase().contains(&query_lower)
+                    });
+
+                    // Search in last message text
+                    let message_match = conv
+                        .last_message
+                        .as_ref()
+                        .map(|msg| msg.text.to_lowercase().contains(&query_lower))
+                        .unwrap_or(false);
+
+                    if !name_match && !message_match {
+                        return false;
+                    }
+                }
+
+                true
+            })
+            .collect()
+    }
+
+    /// Get inbox statistics
+    pub fn stats(&self) -> InboxStats {
+        let total_conversations = self.conversations.len();
+        let unread_conversations = self
+            .conversations
+            .iter()
+            .filter(|c| c.has_unread())
+            .count();
+        let total_unread = self.conversations.iter().map(|c| c.unread_count).sum();
+
+        InboxStats {
+            total_conversations,
+            unread_conversations,
+            total_unread,
+        }
+    }
+
+    /// Get a preview text for a conversation
+    pub fn conversation_preview(&self, conversation: &Conversation) -> ConversationPreview {
+        ConversationPreview::from_conversation(conversation)
+    }
+
+    /// Get only unread conversations
+    pub fn unread_conversations(&self) -> Vec<&Conversation> {
+        self.conversations.iter().filter(|c| c.has_unread()).collect()
+    }
+
+    /// Get only read conversations
+    pub fn read_conversations(&self) -> Vec<&Conversation> {
+        self.conversations.iter().filter(|c| !c.has_unread()).collect()
+    }
+}
+
+/// Preview information for a conversation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationPreview {
+    /// Conversation ID
+    pub conversation_id: String,
+    /// Display title (participant names)
+    pub title: String,
+    /// Preview text (last message or empty state)
+    pub preview_text: String,
+    /// Relative timestamp ("2 hours ago", etc.)
+    pub relative_time: String,
+    /// Whether there are unread messages
+    pub has_unread: bool,
+    /// Unread count
+    pub unread_count: u32,
+    /// Whether the conversation is muted
+    pub is_muted: bool,
+}
+
+impl ConversationPreview {
+    /// Generate a preview from a conversation
+    pub fn from_conversation(conversation: &Conversation) -> Self {
+        let title = if conversation.members.len() == 1 {
+            conversation
+                .other_participant_name()
+                .unwrap_or_else(|| "Unknown".to_string())
+        } else {
+            // Group chat - show comma-separated names
+            conversation
+                .members
+                .iter()
+                .filter_map(|m| {
+                    m.display_name
+                        .as_ref()
+                        .cloned()
+                        .or_else(|| Some(m.handle.clone()))
+                })
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
+        let preview_text = if let Some(last_msg) = &conversation.last_message {
+            // Truncate long messages
+            const MAX_PREVIEW_LENGTH: usize = 100;
+            if last_msg.text.len() > MAX_PREVIEW_LENGTH {
+                format!("{}...", &last_msg.text[..MAX_PREVIEW_LENGTH])
+            } else {
+                last_msg.text.clone()
+            }
+        } else {
+            "No messages yet".to_string()
+        };
+
+        let relative_time = format_relative_time(&conversation.updated_at);
+
+        Self {
+            conversation_id: conversation.id.clone(),
+            title,
+            preview_text,
+            relative_time,
+            has_unread: conversation.has_unread(),
+            unread_count: conversation.unread_count,
+            is_muted: conversation.muted,
+        }
+    }
+}
+
+/// Format a timestamp as relative time
+///
+/// Returns strings like "Just now", "5 minutes ago", "2 hours ago", "Yesterday", "3 days ago", etc.
+pub fn format_relative_time(timestamp: &DateTime<Utc>) -> String {
+    let now = Utc::now();
+    let duration = now.signed_duration_since(*timestamp);
+
+    if duration.num_seconds() < 60 {
+        "Just now".to_string()
+    } else if duration.num_minutes() < 60 {
+        let mins = duration.num_minutes();
+        if mins == 1 {
+            "1 minute ago".to_string()
+        } else {
+            format!("{} minutes ago", mins)
+        }
+    } else if duration.num_hours() < 24 {
+        let hours = duration.num_hours();
+        if hours == 1 {
+            "1 hour ago".to_string()
+        } else {
+            format!("{} hours ago", hours)
+        }
+    } else if duration.num_days() == 1 {
+        "Yesterday".to_string()
+    } else if duration.num_days() < 7 {
+        format!("{} days ago", duration.num_days())
+    } else if duration.num_weeks() == 1 {
+        "1 week ago".to_string()
+    } else if duration.num_weeks() < 4 {
+        format!("{} weeks ago", duration.num_weeks())
+    } else {
+        // Show actual date for older messages
+        timestamp.format("%b %d, %Y").to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -688,5 +987,388 @@ mod tests {
         let config = XrpcClientConfig::new("https://bsky.social");
         let client = XrpcClient::new(config);
         let _service = ConversationService::new(client);
+    }
+
+    // Inbox tests
+
+    fn create_test_conversation(
+        id: &str,
+        name: &str,
+        last_message: Option<&str>,
+        unread_count: u32,
+        hours_ago: i64,
+    ) -> Conversation {
+        let member = MessageSender {
+            did: format!("did:plc:{}", id),
+            handle: format!("{}.bsky.social", name),
+            display_name: Some(name.to_string()),
+            avatar: None,
+        };
+
+        let updated_at = Utc::now() - chrono::Duration::hours(hours_ago);
+
+        let last_msg = last_message.map(|text| Message {
+            id: "msg1".to_string(),
+            text: text.to_string(),
+            sender: member.clone(),
+            sent_at: updated_at,
+            is_from_self: None,
+        });
+
+        Conversation {
+            id: id.to_string(),
+            members: vec![member],
+            last_message: last_msg,
+            unread_count,
+            updated_at,
+            muted: false,
+        }
+    }
+
+    #[test]
+    fn test_inbox_view_creation() {
+        let conversations = vec![
+            create_test_conversation("1", "alice", Some("Hello!"), 2, 1),
+            create_test_conversation("2", "bob", Some("Hey there"), 0, 5),
+        ];
+
+        let inbox = InboxView::new(conversations);
+        assert_eq!(inbox.conversations().len(), 2);
+    }
+
+    #[test]
+    fn test_inbox_sort_by_recent() {
+        let mut inbox = InboxView::new(vec![
+            create_test_conversation("1", "alice", Some("Hello!"), 0, 5),
+            create_test_conversation("2", "bob", Some("Hey"), 0, 1),
+            create_test_conversation("3", "charlie", Some("Hi"), 0, 10),
+        ]);
+
+        inbox.sort_by(ConversationSortBy::Recent);
+
+        let ids: Vec<&str> = inbox
+            .conversations()
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+
+        assert_eq!(ids, vec!["2", "1", "3"]); // bob (1h), alice (5h), charlie (10h)
+    }
+
+    #[test]
+    fn test_inbox_sort_by_unread() {
+        let mut inbox = InboxView::new(vec![
+            create_test_conversation("1", "alice", Some("Hello"), 0, 1),
+            create_test_conversation("2", "bob", Some("Hey"), 5, 2),
+            create_test_conversation("3", "charlie", Some("Hi"), 3, 3),
+        ]);
+
+        inbox.sort_by(ConversationSortBy::Unread);
+
+        let ids: Vec<&str> = inbox
+            .conversations()
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+
+        // bob (5 unread) > charlie (3 unread) > alice (0 unread)
+        assert_eq!(ids, vec!["2", "3", "1"]);
+    }
+
+    #[test]
+    fn test_inbox_sort_by_name() {
+        let mut inbox = InboxView::new(vec![
+            create_test_conversation("1", "Charlie", Some("Hello"), 0, 1),
+            create_test_conversation("2", "alice", Some("Hey"), 0, 2),
+            create_test_conversation("3", "Bob", Some("Hi"), 0, 3),
+        ]);
+
+        inbox.sort_by(ConversationSortBy::Name);
+
+        let names: Vec<String> = inbox
+            .conversations()
+            .iter()
+            .filter_map(|c| c.other_participant_name())
+            .collect();
+
+        assert_eq!(names, vec!["alice", "Bob", "Charlie"]);
+    }
+
+    #[test]
+    fn test_inbox_filter_only_unread() {
+        let inbox = InboxView::new(vec![
+            create_test_conversation("1", "alice", Some("Hello"), 2, 1),
+            create_test_conversation("2", "bob", Some("Hey"), 0, 2),
+            create_test_conversation("3", "charlie", Some("Hi"), 1, 3),
+        ]);
+
+        let filter = InboxFilter {
+            only_unread: true,
+            ..Default::default()
+        };
+
+        let unread = inbox.filter(&filter);
+        assert_eq!(unread.len(), 2); // alice and charlie have unread
+        assert!(unread.iter().all(|c| c.has_unread()));
+    }
+
+    #[test]
+    fn test_inbox_filter_exclude_muted() {
+        let mut conv1 = create_test_conversation("1", "alice", Some("Hello"), 2, 1);
+        conv1.muted = true;
+
+        let conv2 = create_test_conversation("2", "bob", Some("Hey"), 0, 2);
+
+        let inbox = InboxView::new(vec![conv1, conv2]);
+
+        let filter = InboxFilter {
+            exclude_muted: true,
+            ..Default::default()
+        };
+
+        let unmuted = inbox.filter(&filter);
+        assert_eq!(unmuted.len(), 1);
+        assert_eq!(unmuted[0].id, "2");
+    }
+
+    #[test]
+    fn test_inbox_filter_search_by_name() {
+        let inbox = InboxView::new(vec![
+            create_test_conversation("1", "alice", Some("Hello"), 0, 1),
+            create_test_conversation("2", "bob", Some("Hey"), 0, 2),
+            create_test_conversation("3", "alicia", Some("Hi"), 0, 3),
+        ]);
+
+        let filter = InboxFilter {
+            search_query: Some("ali".to_string()),
+            ..Default::default()
+        };
+
+        let results = inbox.filter(&filter);
+        assert_eq!(results.len(), 2); // alice and alicia
+    }
+
+    #[test]
+    fn test_inbox_filter_search_by_message() {
+        let inbox = InboxView::new(vec![
+            create_test_conversation("1", "alice", Some("Hello world"), 0, 1),
+            create_test_conversation("2", "bob", Some("Hey there"), 0, 2),
+            create_test_conversation("3", "charlie", Some("Hello everyone"), 0, 3),
+        ]);
+
+        let filter = InboxFilter {
+            search_query: Some("hello".to_string()),
+            ..Default::default()
+        };
+
+        let results = inbox.filter(&filter);
+        assert_eq!(results.len(), 2); // alice and charlie
+    }
+
+    #[test]
+    fn test_inbox_stats() {
+        let inbox = InboxView::new(vec![
+            create_test_conversation("1", "alice", Some("Hello"), 2, 1),
+            create_test_conversation("2", "bob", Some("Hey"), 0, 2),
+            create_test_conversation("3", "charlie", Some("Hi"), 3, 3),
+        ]);
+
+        let stats = inbox.stats();
+        assert_eq!(stats.total_conversations, 3);
+        assert_eq!(stats.unread_conversations, 2); // alice and charlie
+        assert_eq!(stats.total_unread, 5); // 2 + 3
+    }
+
+    #[test]
+    fn test_inbox_unread_conversations() {
+        let inbox = InboxView::new(vec![
+            create_test_conversation("1", "alice", Some("Hello"), 2, 1),
+            create_test_conversation("2", "bob", Some("Hey"), 0, 2),
+            create_test_conversation("3", "charlie", Some("Hi"), 1, 3),
+        ]);
+
+        let unread = inbox.unread_conversations();
+        assert_eq!(unread.len(), 2);
+        assert!(unread.iter().all(|c| c.has_unread()));
+    }
+
+    #[test]
+    fn test_inbox_read_conversations() {
+        let inbox = InboxView::new(vec![
+            create_test_conversation("1", "alice", Some("Hello"), 2, 1),
+            create_test_conversation("2", "bob", Some("Hey"), 0, 2),
+            create_test_conversation("3", "charlie", Some("Hi"), 0, 3),
+        ]);
+
+        let read = inbox.read_conversations();
+        assert_eq!(read.len(), 2); // bob and charlie
+        assert!(read.iter().all(|c| !c.has_unread()));
+    }
+
+    #[test]
+    fn test_conversation_preview() {
+        let conv = create_test_conversation("1", "alice", Some("Hello world!"), 3, 2);
+
+        let preview = ConversationPreview::from_conversation(&conv);
+
+        assert_eq!(preview.conversation_id, "1");
+        assert_eq!(preview.title, "alice");
+        assert_eq!(preview.preview_text, "Hello world!");
+        assert!(preview.has_unread);
+        assert_eq!(preview.unread_count, 3);
+        assert!(!preview.is_muted);
+    }
+
+    #[test]
+    fn test_conversation_preview_long_message() {
+        let long_message = "a".repeat(150);
+        let conv = create_test_conversation("1", "alice", Some(&long_message), 0, 1);
+
+        let preview = ConversationPreview::from_conversation(&conv);
+
+        assert_eq!(preview.preview_text.len(), 103); // 100 + "..."
+        assert!(preview.preview_text.ends_with("..."));
+    }
+
+    #[test]
+    fn test_conversation_preview_no_message() {
+        let conv = create_test_conversation("1", "alice", None, 0, 1);
+
+        let preview = ConversationPreview::from_conversation(&conv);
+
+        assert_eq!(preview.preview_text, "No messages yet");
+    }
+
+    #[test]
+    fn test_conversation_preview_group_chat() {
+        let member1 = MessageSender {
+            did: "did:plc:1".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            display_name: Some("Alice".to_string()),
+            avatar: None,
+        };
+
+        let member2 = MessageSender {
+            did: "did:plc:2".to_string(),
+            handle: "bob.bsky.social".to_string(),
+            display_name: Some("Bob".to_string()),
+            avatar: None,
+        };
+
+        let member3 = MessageSender {
+            did: "did:plc:3".to_string(),
+            handle: "charlie.bsky.social".to_string(),
+            display_name: Some("Charlie".to_string()),
+            avatar: None,
+        };
+
+        let conv = Conversation {
+            id: "group1".to_string(),
+            members: vec![member1, member2, member3],
+            last_message: Some(Message {
+                id: "msg1".to_string(),
+                text: "Group message".to_string(),
+                sender: MessageSender {
+                    did: "did:plc:1".to_string(),
+                    handle: "alice.bsky.social".to_string(),
+                    display_name: Some("Alice".to_string()),
+                    avatar: None,
+                },
+                sent_at: Utc::now(),
+                is_from_self: None,
+            }),
+            unread_count: 0,
+            updated_at: Utc::now(),
+            muted: false,
+        };
+
+        let preview = ConversationPreview::from_conversation(&conv);
+
+        assert_eq!(preview.title, "Alice, Bob, Charlie");
+    }
+
+    #[test]
+    fn test_format_relative_time_just_now() {
+        let now = Utc::now();
+        let formatted = format_relative_time(&now);
+        assert_eq!(formatted, "Just now");
+    }
+
+    #[test]
+    fn test_format_relative_time_minutes() {
+        let timestamp = Utc::now() - chrono::Duration::minutes(5);
+        let formatted = format_relative_time(&timestamp);
+        assert_eq!(formatted, "5 minutes ago");
+
+        let timestamp = Utc::now() - chrono::Duration::minutes(1);
+        let formatted = format_relative_time(&timestamp);
+        assert_eq!(formatted, "1 minute ago");
+    }
+
+    #[test]
+    fn test_format_relative_time_hours() {
+        let timestamp = Utc::now() - chrono::Duration::hours(3);
+        let formatted = format_relative_time(&timestamp);
+        assert_eq!(formatted, "3 hours ago");
+
+        let timestamp = Utc::now() - chrono::Duration::hours(1);
+        let formatted = format_relative_time(&timestamp);
+        assert_eq!(formatted, "1 hour ago");
+    }
+
+    #[test]
+    fn test_format_relative_time_yesterday() {
+        let timestamp = Utc::now() - chrono::Duration::days(1);
+        let formatted = format_relative_time(&timestamp);
+        assert_eq!(formatted, "Yesterday");
+    }
+
+    #[test]
+    fn test_format_relative_time_days() {
+        let timestamp = Utc::now() - chrono::Duration::days(3);
+        let formatted = format_relative_time(&timestamp);
+        assert_eq!(formatted, "3 days ago");
+    }
+
+    #[test]
+    fn test_format_relative_time_weeks() {
+        let timestamp = Utc::now() - chrono::Duration::weeks(2);
+        let formatted = format_relative_time(&timestamp);
+        assert_eq!(formatted, "2 weeks ago");
+
+        let timestamp = Utc::now() - chrono::Duration::weeks(1);
+        let formatted = format_relative_time(&timestamp);
+        assert_eq!(formatted, "1 week ago");
+    }
+
+    #[test]
+    fn test_format_relative_time_old() {
+        let timestamp = Utc::now() - chrono::Duration::weeks(5);
+        let formatted = format_relative_time(&timestamp);
+        // Should show actual date for messages older than 4 weeks
+        assert!(formatted.contains(","));
+    }
+
+    #[test]
+    fn test_inbox_filter_default() {
+        let filter = InboxFilter::default();
+        assert!(!filter.only_unread);
+        assert!(!filter.exclude_muted);
+        assert!(filter.search_query.is_none());
+    }
+
+    #[test]
+    fn test_inbox_stats_default() {
+        let stats = InboxStats::default();
+        assert_eq!(stats.total_conversations, 0);
+        assert_eq!(stats.unread_conversations, 0);
+        assert_eq!(stats.total_unread, 0);
+    }
+
+    #[test]
+    fn test_conversation_sort_by_variants() {
+        assert_eq!(ConversationSortBy::Recent, ConversationSortBy::Recent);
+        assert_ne!(ConversationSortBy::Recent, ConversationSortBy::Unread);
+        assert_ne!(ConversationSortBy::Unread, ConversationSortBy::Name);
     }
 }
