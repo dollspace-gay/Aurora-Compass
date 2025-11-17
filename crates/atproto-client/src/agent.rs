@@ -681,6 +681,67 @@ impl BskyAgent {
         &self.write_client
     }
 
+    /// Upload a blob to the PDS
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The binary data to upload
+    /// * `mime_type` - MIME type of the blob (e.g., "image/jpeg")
+    ///
+    /// # Returns
+    ///
+    /// Returns a `BlobRef` containing the CID and metadata for the uploaded blob
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use atproto_client::BskyAgent;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let mut agent = BskyAgent::new("https://bsky.social")?;
+    ///     agent.login("alice.bsky.social", "password").await?;
+    ///
+    ///     let image_data = std::fs::read("photo.jpg")?;
+    ///     let blob_ref = agent.upload_blob(&image_data, "image/jpeg").await?;
+    ///     println!("Uploaded blob CID: {}", blob_ref.ref_link.link);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn upload_blob(
+        &self,
+        data: &[u8],
+        mime_type: impl Into<String>,
+    ) -> Result<crate::lexicon::BlobRef> {
+        // Verify we have an active session
+        if !self.has_session() {
+            return Err(AgentError::NoSession);
+        }
+
+        let mime_type = mime_type.into();
+
+        // Create the upload request
+        let request = crate::xrpc::XrpcRequest::procedure("com.atproto.repo.uploadBlob")
+            .body(data.to_vec())
+            .encoding(mime_type.clone());
+
+        // Upload the blob
+        let response: crate::xrpc::XrpcResponse<serde_json::Value> =
+            self.write_client.procedure(request).await?;
+
+        // Parse the blob reference from response
+        #[derive(Deserialize)]
+        struct UploadBlobResponse {
+            blob: crate::lexicon::BlobRef,
+        }
+
+        let upload_response: UploadBlobResponse = serde_json::from_value(response.data)
+            .map_err(|e| AgentError::Service(format!("Failed to parse upload response: {}", e)))?;
+
+        Ok(upload_response.blob)
+    }
+
     /// Update auth headers on both clients
     fn update_auth_headers(&mut self, access_token: &str) {
         let auth = format!("Bearer {}", access_token);
