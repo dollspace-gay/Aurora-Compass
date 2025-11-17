@@ -15,3 +15,6 @@ pub use database::{
     Database, DatabaseConfig, DatabaseError, DatabaseTransaction, MigrationDefinition,
     SqliteDatabase, SynchronousMode,
 };
+pub use kv::{
+    AccountStore, CompareAndSwapError, DeviceStore, KvConfig, KvError, KvStore,
+};
