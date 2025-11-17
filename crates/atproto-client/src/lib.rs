@@ -17,6 +17,10 @@ pub mod xrpc;
 mod test_utils;
 
 pub use agent::BskyAgent;
+pub use session::{
+    get_jwt_expiration, is_jwt_expired, is_jwt_expiring_soon, is_session_expired,
+    is_signup_queued, parse_jwt_claims, AtpSessionData, JwtClaims, SessionAccount, SessionError,
+};
 pub use types::{AtUri, Did, Handle, StrongRef, Tid};
 pub use xrpc::{
     network_retry, retry, HttpMethod, RetryConfig, XrpcClient, XrpcClientConfig, XrpcError,
