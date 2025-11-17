@@ -18,3 +18,4 @@ pub use database::{
 pub use kv::{
     AccountStore, CompareAndSwapError, DeviceStore, KvConfig, KvError, KvStore,
 };
+pub use cache::{CacheConfig, CacheError, DiskCache, MemoryCache, TieredCache};
