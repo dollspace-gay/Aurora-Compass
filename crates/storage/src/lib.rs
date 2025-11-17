@@ -19,3 +19,6 @@ pub use kv::{
     AccountStore, CompareAndSwapError, DeviceStore, KvConfig, KvError, KvStore,
 };
 pub use cache::{CacheConfig, CacheError, DiskCache, MemoryCache, TieredCache};
+pub use persistence::{
+    MigratableState, PersistedState, PersistenceConfig, PersistenceError, StateMigration,
+};
