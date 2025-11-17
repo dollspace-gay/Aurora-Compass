@@ -6,12 +6,15 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod app_state;
 pub mod cache;
 pub mod database;
 pub mod kv;
 pub mod persistence;
 pub mod sync;
 
+pub use app_state::{AppPersistedState, ColorMode, LanguagePrefs, OnboardingState};
+pub use cache::{CacheConfig, CacheError, DiskCache, MemoryCache, TieredCache};
 pub use database::{
     Database, DatabaseConfig, DatabaseError, DatabaseTransaction, MigrationDefinition,
     SqliteDatabase, SynchronousMode,
@@ -19,7 +22,6 @@ pub use database::{
 pub use kv::{
     AccountStore, CompareAndSwapError, DeviceStore, KvConfig, KvError, KvStore,
 };
-pub use cache::{CacheConfig, CacheError, DiskCache, MemoryCache, TieredCache};
 pub use persistence::{
     MigratableState, PersistedState, PersistenceConfig, PersistenceError, StateMigration,
 };
