@@ -853,6 +853,250 @@ impl FeedGeneratorService {
     }
 }
 
+/// Sort order for hashtag feed results
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HashtagFeedSort {
+    /// Most relevant results first (default)
+    #[default]
+    Top,
+    /// Most recent results first
+    Latest,
+}
+
+impl HashtagFeedSort {
+    /// Convert to API string value
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HashtagFeedSort::Top => "top",
+            HashtagFeedSort::Latest => "latest",
+        }
+    }
+}
+
+/// Parameters for fetching a hashtag feed
+#[derive(Debug, Clone)]
+pub struct HashtagFeedParams {
+    /// Hashtag to search for (with or without # prefix)
+    pub hashtag: String,
+
+    /// Pagination cursor
+    pub cursor: Option<String>,
+
+    /// Number of items to fetch (default 50, max 100)
+    pub limit: u32,
+
+    /// Sort order for results
+    pub sort: HashtagFeedSort,
+}
+
+impl HashtagFeedParams {
+    /// Create new hashtag feed parameters
+    ///
+    /// # Arguments
+    ///
+    /// * `hashtag` - The hashtag to search for (with or without # prefix)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::HashtagFeedParams;
+    /// let params = HashtagFeedParams::new("rust");
+    /// assert_eq!(params.hashtag, "rust");
+    /// ```
+    pub fn new(hashtag: impl Into<String>) -> Self {
+        let hashtag = hashtag.into();
+        // Remove # prefix if present
+        let hashtag = if hashtag.starts_with('#') {
+            hashtag[1..].to_string()
+        } else {
+            hashtag
+        };
+
+        Self {
+            hashtag,
+            cursor: None,
+            limit: 50,
+            sort: HashtagFeedSort::default(),
+        }
+    }
+
+    /// Set the pagination cursor
+    pub fn with_cursor(mut self, cursor: Option<String>) -> Self {
+        self.cursor = cursor;
+        self
+    }
+
+    /// Set the result limit
+    pub fn with_limit(mut self, limit: u32) -> Self {
+        self.limit = limit.min(100); // Cap at 100 per API limits
+        self
+    }
+
+    /// Set the sort order
+    pub fn with_sort(mut self, sort: HashtagFeedSort) -> Self {
+        self.sort = sort;
+        self
+    }
+}
+
+/// Hashtag feed service
+///
+/// Provides feed functionality for posts containing specific hashtags.
+/// Uses the Bluesky search API to find posts with hashtags.
+pub struct HashtagFeed {
+    client: Arc<RwLock<XrpcClient>>,
+}
+
+impl HashtagFeed {
+    /// Create a new hashtag feed service
+    ///
+    /// # Arguments
+    ///
+    /// * `client` - Shared XRPC client
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::feeds::HashtagFeed;
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let feed = HashtagFeed::new(client);
+    /// # }
+    /// ```
+    pub fn new(client: Arc<RwLock<XrpcClient>>) -> Self {
+        Self { client }
+    }
+
+    /// Fetch posts for a specific hashtag
+    ///
+    /// This returns posts containing the specified hashtag, using the Bluesky
+    /// search API. Results can be sorted by relevance (top) or recency (latest).
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - Hashtag feed parameters including hashtag, cursor, limit, and sort
+    ///
+    /// # Returns
+    ///
+    /// A `FeedResponse` containing posts with the hashtag and pagination cursor.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FeedError::ApiError` if the network request fails or
+    /// `FeedError::ParseError` if the response cannot be parsed.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::feeds::{HashtagFeed, HashtagFeedParams, HashtagFeedSort};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let feed = HashtagFeed::new(client);
+    /// let params = HashtagFeedParams::new("rust")
+    ///     .with_sort(HashtagFeedSort::Latest)
+    ///     .with_limit(25);
+    /// let response = feed.fetch(params).await?;
+    /// println!("Got {} posts with #rust", response.feed.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn fetch(&self, params: HashtagFeedParams) -> Result<FeedResponse> {
+        if params.hashtag.trim().is_empty() {
+            return Err(FeedError::ApiError("Hashtag cannot be empty".to_string()));
+        }
+
+        let client = self.client.read().await;
+
+        // Build search query with hashtag prefix
+        let query = format!("#{}", params.hashtag.trim());
+
+        let mut request = atproto_client::XrpcRequest::query("app.bsky.feed.searchPosts")
+            .param("q", query)
+            .param("limit", params.limit.to_string())
+            .param("sort", params.sort.as_str());
+
+        if let Some(cursor) = params.cursor {
+            request = request.param("cursor", cursor);
+        }
+
+        let response = client
+            .query(request)
+            .await
+            .map_err(|e| FeedError::ApiError(e.to_string()))?;
+
+        // Parse the search response
+        #[derive(Deserialize)]
+        struct SearchResponse {
+            posts: Vec<PostView>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            cursor: Option<String>,
+        }
+
+        let search_response: SearchResponse =
+            serde_json::from_value(response.data).map_err(FeedError::ParseError)?;
+
+        // Convert PostView to FeedViewPost for feed consistency
+        let feed = search_response
+            .posts
+            .into_iter()
+            .map(|post| FeedViewPost {
+                post,
+                reply: None,
+                reason: None,
+                feed_context: None,
+            })
+            .collect();
+
+        Ok(FeedResponse {
+            cursor: search_response.cursor,
+            feed,
+        })
+    }
+
+    /// Peek at the latest post for a hashtag without affecting pagination
+    ///
+    /// This is useful for checking if there are new posts with this hashtag
+    /// without consuming them from the feed.
+    ///
+    /// # Arguments
+    ///
+    /// * `hashtag` - The hashtag to check (with or without # prefix)
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::feeds::HashtagFeed;
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let feed = HashtagFeed::new(client);
+    /// if let Some(latest) = feed.peek_latest("rust").await? {
+    ///     println!("New post with #rust: {}", latest.post.uri);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn peek_latest(&self, hashtag: impl Into<String>) -> Result<Option<FeedViewPost>> {
+        let params = HashtagFeedParams::new(hashtag)
+            .with_limit(1)
+            .with_sort(HashtagFeedSort::Latest);
+
+        let response = self.fetch(params).await?;
+        Ok(response.feed.into_iter().next())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1137,5 +1381,171 @@ mod tests {
         let feed = CustomFeed::new(client, feed_uri, FeedPreferences::default());
 
         assert_eq!(feed.uri(), feed_uri);
+    }
+
+    // Hashtag Feed Tests
+
+    #[test]
+    fn test_hashtag_feed_params_new() {
+        let params = HashtagFeedParams::new("rust");
+        assert_eq!(params.hashtag, "rust");
+        assert_eq!(params.cursor, None);
+        assert_eq!(params.limit, 50);
+        assert_eq!(params.sort, HashtagFeedSort::Top);
+    }
+
+    #[test]
+    fn test_hashtag_feed_params_strips_hash() {
+        let params = HashtagFeedParams::new("#rust");
+        assert_eq!(params.hashtag, "rust");
+    }
+
+    #[test]
+    fn test_hashtag_feed_params_with_cursor() {
+        let params = HashtagFeedParams::new("rust")
+            .with_cursor(Some("cursor123".to_string()));
+        assert_eq!(params.cursor, Some("cursor123".to_string()));
+    }
+
+    #[test]
+    fn test_hashtag_feed_params_with_limit() {
+        let params = HashtagFeedParams::new("rust").with_limit(25);
+        assert_eq!(params.limit, 25);
+    }
+
+    #[test]
+    fn test_hashtag_feed_params_limit_cap() {
+        // Limit should be capped at 100
+        let params = HashtagFeedParams::new("rust").with_limit(150);
+        assert_eq!(params.limit, 100);
+    }
+
+    #[test]
+    fn test_hashtag_feed_params_with_sort() {
+        let params = HashtagFeedParams::new("rust")
+            .with_sort(HashtagFeedSort::Latest);
+        assert_eq!(params.sort, HashtagFeedSort::Latest);
+    }
+
+    #[test]
+    fn test_hashtag_feed_params_builder_chain() {
+        let params = HashtagFeedParams::new("#bluesky")
+            .with_cursor(Some("abc".to_string()))
+            .with_limit(10)
+            .with_sort(HashtagFeedSort::Latest);
+
+        assert_eq!(params.hashtag, "bluesky");
+        assert_eq!(params.cursor, Some("abc".to_string()));
+        assert_eq!(params.limit, 10);
+        assert_eq!(params.sort, HashtagFeedSort::Latest);
+    }
+
+    #[test]
+    fn test_hashtag_feed_sort_as_str() {
+        assert_eq!(HashtagFeedSort::Top.as_str(), "top");
+        assert_eq!(HashtagFeedSort::Latest.as_str(), "latest");
+    }
+
+    #[test]
+    fn test_hashtag_feed_sort_default() {
+        let sort = HashtagFeedSort::default();
+        assert_eq!(sort, HashtagFeedSort::Top);
+    }
+
+    #[tokio::test]
+    async fn test_hashtag_feed_empty_hashtag_error() {
+        use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let config = XrpcClientConfig::default();
+        let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+        let feed = HashtagFeed::new(client);
+
+        let params = HashtagFeedParams::new("");
+        let result = feed.fetch(params).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(FeedError::ApiError(msg)) => {
+                assert_eq!(msg, "Hashtag cannot be empty");
+            }
+            _ => panic!("Expected ApiError for empty hashtag"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_hashtag_feed_whitespace_hashtag_error() {
+        use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let config = XrpcClientConfig::default();
+        let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+        let feed = HashtagFeed::new(client);
+
+        let params = HashtagFeedParams::new("   ");
+        let result = feed.fetch(params).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(FeedError::ApiError(msg)) => {
+                assert_eq!(msg, "Hashtag cannot be empty");
+            }
+            _ => panic!("Expected ApiError for whitespace hashtag"),
+        }
+    }
+
+    #[test]
+    fn test_hashtag_feed_new() {
+        use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let config = XrpcClientConfig::default();
+        let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+
+        let _feed = HashtagFeed::new(client);
+        // Test passes if HashtagFeed::new doesn't panic
+    }
+
+    #[test]
+    fn test_hashtag_params_multiple_words() {
+        let params = HashtagFeedParams::new("rust programming");
+        assert_eq!(params.hashtag, "rust programming");
+    }
+
+    #[test]
+    fn test_hashtag_params_special_chars() {
+        let params = HashtagFeedParams::new("rust-lang");
+        assert_eq!(params.hashtag, "rust-lang");
+    }
+
+    #[test]
+    fn test_hashtag_feed_sort_equality() {
+        assert_eq!(HashtagFeedSort::Top, HashtagFeedSort::Top);
+        assert_eq!(HashtagFeedSort::Latest, HashtagFeedSort::Latest);
+        assert_ne!(HashtagFeedSort::Top, HashtagFeedSort::Latest);
+    }
+
+    #[test]
+    fn test_hashtag_feed_sort_clone() {
+        let sort1 = HashtagFeedSort::Latest;
+        let sort2 = sort1;
+        assert_eq!(sort1, sort2);
+    }
+
+    #[test]
+    fn test_hashtag_params_clone() {
+        let params1 = HashtagFeedParams::new("rust")
+            .with_limit(25)
+            .with_sort(HashtagFeedSort::Latest);
+
+        let params2 = params1.clone();
+
+        assert_eq!(params1.hashtag, params2.hashtag);
+        assert_eq!(params1.limit, params2.limit);
+        assert_eq!(params1.sort, params2.sort);
+        assert_eq!(params1.cursor, params2.cursor);
     }
 }
