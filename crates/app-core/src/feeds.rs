@@ -906,8 +906,8 @@ impl HashtagFeedParams {
     pub fn new(hashtag: impl Into<String>) -> Self {
         let hashtag = hashtag.into();
         // Remove # prefix if present
-        let hashtag = if hashtag.starts_with('#') {
-            hashtag[1..].to_string()
+        let hashtag = if let Some(stripped) = hashtag.strip_prefix('#') {
+            stripped.to_string()
         } else {
             hashtag
         };
@@ -1547,5 +1547,973 @@ mod tests {
         assert_eq!(params1.limit, params2.limit);
         assert_eq!(params1.sort, params2.sort);
         assert_eq!(params1.cursor, params2.cursor);
+    }
+}
+
+// ============================================================================
+// Pinned Feeds System
+// ============================================================================
+
+/// Pinned feed metadata
+///
+/// Represents a feed that has been pinned by the user for quick access.
+/// Pinned feeds appear in a customizable order at the top of the feed list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedFeed {
+    /// AT URI of the feed (for custom feeds) or special identifier (like "following")
+    pub uri: String,
+
+    /// Display name of the feed
+    pub display_name: Option<String>,
+
+    /// Feed type for UI differentiation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feed_type: Option<PinnedFeedType>,
+
+    /// Position in the pinned feeds list (0-indexed)
+    pub position: usize,
+
+    /// Timestamp when the feed was pinned
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned_at: Option<String>,
+}
+
+/// Type of pinned feed
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PinnedFeedType {
+    /// Following/timeline feed
+    Following,
+    /// Custom algorithm feed
+    Custom,
+    /// List feed
+    List,
+    /// Hashtag feed
+    Hashtag,
+}
+
+impl PinnedFeed {
+    /// Create a new pinned feed entry
+    ///
+    /// # Arguments
+    ///
+    /// * `uri` - Feed URI
+    /// * `position` - Position in the pinned feeds list
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeed;
+    /// let feed = PinnedFeed::new("at://did:plc:abc/app.bsky.feed.generator/tech", 0);
+    /// assert_eq!(feed.position, 0);
+    /// ```
+    pub fn new(uri: impl Into<String>, position: usize) -> Self {
+        Self {
+            uri: uri.into(),
+            display_name: None,
+            feed_type: None,
+            position,
+            pinned_at: None,
+        }
+    }
+
+    /// Create a pinned feed with display name
+    pub fn with_display_name(mut self, name: impl Into<String>) -> Self {
+        self.display_name = Some(name.into());
+        self
+    }
+
+    /// Create a pinned feed with type
+    pub fn with_type(mut self, feed_type: PinnedFeedType) -> Self {
+        self.feed_type = Some(feed_type);
+        self
+    }
+
+    /// Create a pinned feed with timestamp
+    pub fn with_timestamp(mut self, timestamp: impl Into<String>) -> Self {
+        self.pinned_at = Some(timestamp.into());
+        self
+    }
+}
+
+/// Result type for pinned feeds operations
+pub type PinnedFeedsResult<T> = std::result::Result<T, PinnedFeedsError>;
+
+/// Errors that can occur during pinned feeds operations
+#[derive(Debug, thiserror::Error)]
+pub enum PinnedFeedsError {
+    /// Feed is already pinned
+    #[error("Feed is already pinned: {0}")]
+    AlreadyPinned(String),
+
+    /// Feed is not pinned
+    #[error("Feed is not pinned: {0}")]
+    NotPinned(String),
+
+    /// Invalid index for reordering
+    #[error("Invalid index: {0}")]
+    InvalidIndex(usize),
+
+    /// Maximum pinned feeds limit reached
+    #[error("Maximum pinned feeds limit reached (max: {0})")]
+    LimitReached(usize),
+
+    /// Invalid feed URI
+    #[error("Invalid feed URI: {0}")]
+    InvalidUri(String),
+}
+
+/// Manager for pinned feeds operations
+///
+/// Provides a high-level API for managing pinned feeds including
+/// pinning, unpinning, reordering, and querying pinned status.
+///
+/// # Example
+///
+/// ```
+/// # use app_core::feeds::PinnedFeedsManager;
+/// let manager = PinnedFeedsManager::new();
+/// // Pin a feed
+/// manager.pin("at://did:plc:abc/app.bsky.feed.generator/tech")?;
+/// // Check if pinned
+/// assert!(manager.is_pinned("at://did:plc:abc/app.bsky.feed.generator/tech"));
+/// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+/// ```
+pub struct PinnedFeedsManager {
+    /// List of pinned feed URIs in order
+    pinned_uris: Vec<String>,
+
+    /// Maximum number of pinned feeds allowed
+    max_pinned: usize,
+}
+
+impl PinnedFeedsManager {
+    /// Default maximum number of pinned feeds
+    pub const DEFAULT_MAX_PINNED: usize = 20;
+
+    /// Create a new pinned feeds manager
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let manager = PinnedFeedsManager::new();
+    /// assert_eq!(manager.count(), 0);
+    /// ```
+    pub fn new() -> Self {
+        Self {
+            pinned_uris: Vec::new(),
+            max_pinned: Self::DEFAULT_MAX_PINNED,
+        }
+    }
+
+    /// Create a manager with a custom maximum
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let manager = PinnedFeedsManager::with_max(10);
+    /// ```
+    pub fn with_max(max_pinned: usize) -> Self {
+        Self {
+            pinned_uris: Vec::new(),
+            max_pinned,
+        }
+    }
+
+    /// Create a manager from existing pinned feeds
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let feeds = vec!["feed1".to_string(), "feed2".to_string()];
+    /// let manager = PinnedFeedsManager::from_uris(feeds);
+    /// assert_eq!(manager.count(), 2);
+    /// ```
+    pub fn from_uris(uris: Vec<String>) -> Self {
+        Self {
+            pinned_uris: uris,
+            max_pinned: Self::DEFAULT_MAX_PINNED,
+        }
+    }
+
+    /// Pin a feed
+    ///
+    /// Adds the feed to the end of the pinned feeds list.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PinnedFeedsError::AlreadyPinned` if the feed is already pinned.
+    /// Returns `PinnedFeedsError::LimitReached` if the maximum number of pinned feeds is reached.
+    /// Returns `PinnedFeedsError::InvalidUri` if the URI is empty.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.pin("at://did:plc:abc/app.bsky.feed.generator/tech")?;
+    /// assert!(manager.is_pinned("at://did:plc:abc/app.bsky.feed.generator/tech"));
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn pin(&mut self, uri: impl Into<String>) -> PinnedFeedsResult<()> {
+        let uri = uri.into();
+
+        // Validate URI
+        if uri.trim().is_empty() {
+            return Err(PinnedFeedsError::InvalidUri(uri));
+        }
+
+        // Check if already pinned
+        if self.pinned_uris.contains(&uri) {
+            return Err(PinnedFeedsError::AlreadyPinned(uri));
+        }
+
+        // Check limit
+        if self.pinned_uris.len() >= self.max_pinned {
+            return Err(PinnedFeedsError::LimitReached(self.max_pinned));
+        }
+
+        self.pinned_uris.push(uri);
+        Ok(())
+    }
+
+    /// Unpin a feed
+    ///
+    /// Removes the feed from the pinned feeds list.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PinnedFeedsError::NotPinned` if the feed is not pinned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.pin("feed1")?;
+    /// manager.unpin("feed1")?;
+    /// assert!(!manager.is_pinned("feed1"));
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn unpin(&mut self, uri: &str) -> PinnedFeedsResult<()> {
+        let pos = self
+            .pinned_uris
+            .iter()
+            .position(|u| u == uri)
+            .ok_or_else(|| PinnedFeedsError::NotPinned(uri.to_string()))?;
+
+        self.pinned_uris.remove(pos);
+        Ok(())
+    }
+
+    /// Check if a feed is pinned
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.pin("feed1")?;
+    /// assert!(manager.is_pinned("feed1"));
+    /// assert!(!manager.is_pinned("feed2"));
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn is_pinned(&self, uri: &str) -> bool {
+        self.pinned_uris.contains(&uri.to_string())
+    }
+
+    /// Get the position of a pinned feed (0-indexed)
+    ///
+    /// Returns `None` if the feed is not pinned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.pin("feed1")?;
+    /// manager.pin("feed2")?;
+    /// assert_eq!(manager.position("feed1"), Some(0));
+    /// assert_eq!(manager.position("feed2"), Some(1));
+    /// assert_eq!(manager.position("feed3"), None);
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn position(&self, uri: &str) -> Option<usize> {
+        self.pinned_uris.iter().position(|u| u == uri)
+    }
+
+    /// Get all pinned feed URIs in order
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.pin("feed1")?;
+    /// manager.pin("feed2")?;
+    /// assert_eq!(manager.list(), &["feed1".to_string(), "feed2".to_string()]);
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn list(&self) -> &[String] {
+        &self.pinned_uris
+    }
+
+    /// Get the number of pinned feeds
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// assert_eq!(manager.count(), 0);
+    /// manager.pin("feed1")?;
+    /// assert_eq!(manager.count(), 1);
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn count(&self) -> usize {
+        self.pinned_uris.len()
+    }
+
+    /// Check if any feeds are pinned
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let manager = PinnedFeedsManager::new();
+    /// assert!(manager.is_empty());
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        self.pinned_uris.is_empty()
+    }
+
+    /// Reorder a pinned feed
+    ///
+    /// Moves a feed from one position to another in the pinned feeds list.
+    ///
+    /// # Arguments
+    ///
+    /// * `from_index` - Current position of the feed (0-indexed)
+    /// * `to_index` - New position for the feed (0-indexed)
+    ///
+    /// # Errors
+    ///
+    /// Returns `PinnedFeedsError::InvalidIndex` if either index is out of bounds.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.pin("feed1")?;
+    /// manager.pin("feed2")?;
+    /// manager.pin("feed3")?;
+    /// manager.reorder(0, 2)?;
+    /// assert_eq!(manager.list(), &["feed2".to_string(), "feed3".to_string(), "feed1".to_string()]);
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn reorder(&mut self, from_index: usize, to_index: usize) -> PinnedFeedsResult<()> {
+        if from_index >= self.pinned_uris.len() {
+            return Err(PinnedFeedsError::InvalidIndex(from_index));
+        }
+        if to_index >= self.pinned_uris.len() {
+            return Err(PinnedFeedsError::InvalidIndex(to_index));
+        }
+
+        let feed = self.pinned_uris.remove(from_index);
+        self.pinned_uris.insert(to_index, feed);
+        Ok(())
+    }
+
+    /// Clear all pinned feeds
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.pin("feed1")?;
+    /// manager.pin("feed2")?;
+    /// manager.clear();
+    /// assert!(manager.is_empty());
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn clear(&mut self) {
+        self.pinned_uris.clear();
+    }
+
+    /// Export pinned feed URIs for persistence
+    ///
+    /// Returns a cloned vector of all pinned feed URIs.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.pin("feed1")?;
+    /// let uris = manager.export();
+    /// assert_eq!(uris, vec!["feed1".to_string()]);
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn export(&self) -> Vec<String> {
+        self.pinned_uris.clone()
+    }
+
+    /// Import pinned feeds from persistence
+    ///
+    /// Replaces all current pinned feeds with the provided URIs.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.import(vec!["feed1".to_string(), "feed2".to_string()]);
+    /// assert_eq!(manager.count(), 2);
+    /// ```
+    pub fn import(&mut self, uris: Vec<String>) {
+        self.pinned_uris = uris;
+    }
+
+    /// Toggle a feed's pinned status
+    ///
+    /// Pins the feed if it's not pinned, unpins it if it is.
+    /// Returns `true` if the feed is now pinned, `false` if unpinned.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PinnedFeedsError::LimitReached` if trying to pin when at max capacity.
+    /// Returns `PinnedFeedsError::InvalidUri` if the URI is empty.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// let pinned = manager.toggle("feed1")?;
+    /// assert!(pinned);
+    /// let unpinned = manager.toggle("feed1")?;
+    /// assert!(!unpinned);
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn toggle(&mut self, uri: impl Into<String>) -> PinnedFeedsResult<bool> {
+        let uri = uri.into();
+
+        if self.is_pinned(&uri) {
+            self.unpin(&uri)?;
+            Ok(false)
+        } else {
+            self.pin(uri)?;
+            Ok(true)
+        }
+    }
+
+    /// Move a feed up in the pinned list
+    ///
+    /// Swaps the feed with the one above it. Does nothing if already at the top.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PinnedFeedsError::NotPinned` if the feed is not pinned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.pin("feed1")?;
+    /// manager.pin("feed2")?;
+    /// manager.pin("feed3")?;
+    /// manager.move_up("feed3")?;
+    /// assert_eq!(manager.position("feed3"), Some(1));
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn move_up(&mut self, uri: &str) -> PinnedFeedsResult<()> {
+        let pos = self.position(uri).ok_or_else(|| PinnedFeedsError::NotPinned(uri.to_string()))?;
+
+        if pos > 0 {
+            self.reorder(pos, pos - 1)?;
+        }
+        Ok(())
+    }
+
+    /// Move a feed down in the pinned list
+    ///
+    /// Swaps the feed with the one below it. Does nothing if already at the bottom.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PinnedFeedsError::NotPinned` if the feed is not pinned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::PinnedFeedsManager;
+    /// let mut manager = PinnedFeedsManager::new();
+    /// manager.pin("feed1")?;
+    /// manager.pin("feed2")?;
+    /// manager.pin("feed3")?;
+    /// manager.move_down("feed1")?;
+    /// assert_eq!(manager.position("feed1"), Some(1));
+    /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
+    /// ```
+    pub fn move_down(&mut self, uri: &str) -> PinnedFeedsResult<()> {
+        let pos = self.position(uri).ok_or_else(|| PinnedFeedsError::NotPinned(uri.to_string()))?;
+
+        if pos < self.pinned_uris.len() - 1 {
+            self.reorder(pos, pos + 1)?;
+        }
+        Ok(())
+    }
+}
+
+impl Default for PinnedFeedsManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod pinned_feeds_tests {
+    use super::*;
+
+    #[test]
+    fn test_new_manager() {
+        let manager = PinnedFeedsManager::new();
+        assert_eq!(manager.count(), 0);
+        assert!(manager.is_empty());
+        assert_eq!(manager.max_pinned, PinnedFeedsManager::DEFAULT_MAX_PINNED);
+    }
+
+    #[test]
+    fn test_with_max() {
+        let manager = PinnedFeedsManager::with_max(5);
+        assert_eq!(manager.max_pinned, 5);
+    }
+
+    #[test]
+    fn test_from_uris() {
+        let uris = vec!["feed1".to_string(), "feed2".to_string()];
+        let manager = PinnedFeedsManager::from_uris(uris);
+        assert_eq!(manager.count(), 2);
+        assert!(manager.is_pinned("feed1"));
+        assert!(manager.is_pinned("feed2"));
+    }
+
+    #[test]
+    fn test_pin_feed() {
+        let mut manager = PinnedFeedsManager::new();
+        assert!(manager.pin("feed1").is_ok());
+        assert_eq!(manager.count(), 1);
+        assert!(manager.is_pinned("feed1"));
+    }
+
+    #[test]
+    fn test_pin_already_pinned() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        let result = manager.pin("feed1");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(PinnedFeedsError::AlreadyPinned(_))));
+    }
+
+    #[test]
+    fn test_pin_empty_uri() {
+        let mut manager = PinnedFeedsManager::new();
+        let result = manager.pin("");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(PinnedFeedsError::InvalidUri(_))));
+    }
+
+    #[test]
+    fn test_pin_limit_reached() {
+        let mut manager = PinnedFeedsManager::with_max(2);
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        let result = manager.pin("feed3");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(PinnedFeedsError::LimitReached(2))));
+    }
+
+    #[test]
+    fn test_unpin_feed() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        assert!(manager.unpin("feed1").is_ok());
+        assert_eq!(manager.count(), 1);
+        assert!(!manager.is_pinned("feed1"));
+        assert!(manager.is_pinned("feed2"));
+    }
+
+    #[test]
+    fn test_unpin_not_pinned() {
+        let mut manager = PinnedFeedsManager::new();
+        let result = manager.unpin("feed1");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(PinnedFeedsError::NotPinned(_))));
+    }
+
+    #[test]
+    fn test_is_pinned() {
+        let mut manager = PinnedFeedsManager::new();
+        assert!(!manager.is_pinned("feed1"));
+        manager.pin("feed1").unwrap();
+        assert!(manager.is_pinned("feed1"));
+        assert!(!manager.is_pinned("feed2"));
+    }
+
+    #[test]
+    fn test_position() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        manager.pin("feed3").unwrap();
+        assert_eq!(manager.position("feed1"), Some(0));
+        assert_eq!(manager.position("feed2"), Some(1));
+        assert_eq!(manager.position("feed3"), Some(2));
+        assert_eq!(manager.position("feed4"), None);
+    }
+
+    #[test]
+    fn test_list() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        assert_eq!(manager.list(), &["feed1".to_string(), "feed2".to_string()]);
+    }
+
+    #[test]
+    fn test_count() {
+        let mut manager = PinnedFeedsManager::new();
+        assert_eq!(manager.count(), 0);
+        manager.pin("feed1").unwrap();
+        assert_eq!(manager.count(), 1);
+        manager.pin("feed2").unwrap();
+        assert_eq!(manager.count(), 2);
+        manager.unpin("feed1").unwrap();
+        assert_eq!(manager.count(), 1);
+    }
+
+    #[test]
+    fn test_is_empty() {
+        let mut manager = PinnedFeedsManager::new();
+        assert!(manager.is_empty());
+        manager.pin("feed1").unwrap();
+        assert!(!manager.is_empty());
+        manager.unpin("feed1").unwrap();
+        assert!(manager.is_empty());
+    }
+
+    #[test]
+    fn test_reorder() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        manager.pin("feed3").unwrap();
+
+        // Move first to last
+        manager.reorder(0, 2).unwrap();
+        assert_eq!(
+            manager.list(),
+            &["feed2".to_string(), "feed3".to_string(), "feed1".to_string()]
+        );
+
+        // Move last to first
+        manager.reorder(2, 0).unwrap();
+        assert_eq!(
+            manager.list(),
+            &["feed1".to_string(), "feed2".to_string(), "feed3".to_string()]
+        );
+
+        // Move middle up
+        manager.reorder(1, 0).unwrap();
+        assert_eq!(
+            manager.list(),
+            &["feed2".to_string(), "feed1".to_string(), "feed3".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_reorder_invalid_from_index() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        let result = manager.reorder(5, 0);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(PinnedFeedsError::InvalidIndex(5))));
+    }
+
+    #[test]
+    fn test_reorder_invalid_to_index() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        let result = manager.reorder(0, 5);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(PinnedFeedsError::InvalidIndex(5))));
+    }
+
+    #[test]
+    fn test_reorder_same_index() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        manager.reorder(1, 1).unwrap();
+        assert_eq!(manager.list(), &["feed1".to_string(), "feed2".to_string()]);
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        assert_eq!(manager.count(), 2);
+        manager.clear();
+        assert_eq!(manager.count(), 0);
+        assert!(manager.is_empty());
+    }
+
+    #[test]
+    fn test_export() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        let exported = manager.export();
+        assert_eq!(exported, vec!["feed1".to_string(), "feed2".to_string()]);
+    }
+
+    #[test]
+    fn test_import() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.import(vec!["feed1".to_string(), "feed2".to_string(), "feed3".to_string()]);
+        assert_eq!(manager.count(), 3);
+        assert!(manager.is_pinned("feed1"));
+        assert!(manager.is_pinned("feed2"));
+        assert!(manager.is_pinned("feed3"));
+    }
+
+    #[test]
+    fn test_import_replaces_existing() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("old1").unwrap();
+        manager.pin("old2").unwrap();
+        manager.import(vec!["new1".to_string(), "new2".to_string()]);
+        assert_eq!(manager.count(), 2);
+        assert!(!manager.is_pinned("old1"));
+        assert!(!manager.is_pinned("old2"));
+        assert!(manager.is_pinned("new1"));
+        assert!(manager.is_pinned("new2"));
+    }
+
+    #[test]
+    fn test_toggle_pin() {
+        let mut manager = PinnedFeedsManager::new();
+        let pinned = manager.toggle("feed1").unwrap();
+        assert!(pinned);
+        assert!(manager.is_pinned("feed1"));
+    }
+
+    #[test]
+    fn test_toggle_unpin() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        let pinned = manager.toggle("feed1").unwrap();
+        assert!(!pinned);
+        assert!(!manager.is_pinned("feed1"));
+    }
+
+    #[test]
+    fn test_toggle_multiple_times() {
+        let mut manager = PinnedFeedsManager::new();
+        assert!(manager.toggle("feed1").unwrap());
+        assert!(!manager.toggle("feed1").unwrap());
+        assert!(manager.toggle("feed1").unwrap());
+    }
+
+    #[test]
+    fn test_move_up() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        manager.pin("feed3").unwrap();
+
+        manager.move_up("feed3").unwrap();
+        assert_eq!(manager.position("feed3"), Some(1));
+        assert_eq!(
+            manager.list(),
+            &["feed1".to_string(), "feed3".to_string(), "feed2".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_move_up_at_top() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+
+        manager.move_up("feed1").unwrap();
+        assert_eq!(manager.position("feed1"), Some(0));
+        assert_eq!(manager.list(), &["feed1".to_string(), "feed2".to_string()]);
+    }
+
+    #[test]
+    fn test_move_up_not_pinned() {
+        let mut manager = PinnedFeedsManager::new();
+        let result = manager.move_up("feed1");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(PinnedFeedsError::NotPinned(_))));
+    }
+
+    #[test]
+    fn test_move_down() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        manager.pin("feed3").unwrap();
+
+        manager.move_down("feed1").unwrap();
+        assert_eq!(manager.position("feed1"), Some(1));
+        assert_eq!(
+            manager.list(),
+            &["feed2".to_string(), "feed1".to_string(), "feed3".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_move_down_at_bottom() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+
+        manager.move_down("feed2").unwrap();
+        assert_eq!(manager.position("feed2"), Some(1));
+        assert_eq!(manager.list(), &["feed1".to_string(), "feed2".to_string()]);
+    }
+
+    #[test]
+    fn test_move_down_not_pinned() {
+        let mut manager = PinnedFeedsManager::new();
+        let result = manager.move_down("feed1");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(PinnedFeedsError::NotPinned(_))));
+    }
+
+    #[test]
+    fn test_default_trait() {
+        let manager = PinnedFeedsManager::default();
+        assert_eq!(manager.count(), 0);
+        assert!(manager.is_empty());
+    }
+
+    #[test]
+    fn test_pinned_feed_new() {
+        let feed = PinnedFeed::new("at://did:plc:abc/app.bsky.feed.generator/tech", 0);
+        assert_eq!(feed.uri, "at://did:plc:abc/app.bsky.feed.generator/tech");
+        assert_eq!(feed.position, 0);
+        assert!(feed.display_name.is_none());
+        assert!(feed.feed_type.is_none());
+        assert!(feed.pinned_at.is_none());
+    }
+
+    #[test]
+    fn test_pinned_feed_builder() {
+        let feed = PinnedFeed::new("feed1", 0)
+            .with_display_name("Tech Feed")
+            .with_type(PinnedFeedType::Custom)
+            .with_timestamp("2024-01-01T00:00:00Z");
+
+        assert_eq!(feed.display_name, Some("Tech Feed".to_string()));
+        assert_eq!(feed.feed_type, Some(PinnedFeedType::Custom));
+        assert_eq!(feed.pinned_at, Some("2024-01-01T00:00:00Z".to_string()));
+    }
+
+    #[test]
+    fn test_pinned_feed_serialization() {
+        let feed = PinnedFeed::new("feed1", 0)
+            .with_display_name("Test Feed")
+            .with_type(PinnedFeedType::Following);
+
+        let json = serde_json::to_string(&feed).unwrap();
+        let deserialized: PinnedFeed = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(feed, deserialized);
+        assert!(json.contains("displayName"));
+        assert!(json.contains("feedType"));
+    }
+
+    #[test]
+    fn test_pinned_feed_type_serialization() {
+        let types = vec![
+            PinnedFeedType::Following,
+            PinnedFeedType::Custom,
+            PinnedFeedType::List,
+            PinnedFeedType::Hashtag,
+        ];
+
+        for feed_type in types {
+            let json = serde_json::to_string(&feed_type).unwrap();
+            let deserialized: PinnedFeedType = serde_json::from_str(&json).unwrap();
+            assert_eq!(feed_type, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_complex_reordering_sequence() {
+        let mut manager = PinnedFeedsManager::new();
+        manager.pin("feed1").unwrap();
+        manager.pin("feed2").unwrap();
+        manager.pin("feed3").unwrap();
+        manager.pin("feed4").unwrap();
+        manager.pin("feed5").unwrap();
+
+        // Move feed5 to top
+        manager.reorder(4, 0).unwrap();
+        assert_eq!(manager.position("feed5"), Some(0));
+
+        // Move feed1 to position 2
+        manager.reorder(1, 2).unwrap();
+        assert_eq!(manager.position("feed1"), Some(2));
+
+        // Verify final order
+        assert_eq!(
+            manager.list(),
+            &[
+                "feed5".to_string(),
+                "feed2".to_string(),
+                "feed1".to_string(),
+                "feed3".to_string(),
+                "feed4".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_pin_with_special_characters_in_uri() {
+        let mut manager = PinnedFeedsManager::new();
+        let uri = "at://did:plc:abc123xyz/app.bsky.feed.generator/tech-news";
+        manager.pin(uri).unwrap();
+        assert!(manager.is_pinned(uri));
+    }
+
+    #[test]
+    fn test_error_display() {
+        let error = PinnedFeedsError::AlreadyPinned("feed1".to_string());
+        assert_eq!(error.to_string(), "Feed is already pinned: feed1");
+
+        let error = PinnedFeedsError::NotPinned("feed2".to_string());
+        assert_eq!(error.to_string(), "Feed is not pinned: feed2");
+
+        let error = PinnedFeedsError::InvalidIndex(5);
+        assert_eq!(error.to_string(), "Invalid index: 5");
+
+        let error = PinnedFeedsError::LimitReached(20);
+        assert_eq!(error.to_string(), "Maximum pinned feeds limit reached (max: 20)");
+
+        let error = PinnedFeedsError::InvalidUri("".to_string());
+        assert_eq!(error.to_string(), "Invalid feed URI: ");
     }
 }
