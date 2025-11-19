@@ -22,3 +22,4 @@ atproto-client = { path = "../atproto-client" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = "3.13"
