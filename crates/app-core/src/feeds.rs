@@ -600,9 +600,256 @@ pub struct GeneratorViewerState {
     pub like: Option<String>,
 }
 
-/// Feed preferences
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Feed view preferences
+///
+/// Controls what content is shown or hidden in feeds, matching Bluesky's
+/// feed view preferences structure.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedViewPreferences {
+    /// Hide all replies in the feed
+    #[serde(default)]
+    pub hide_replies: bool,
+
+    /// Hide reposts/reblogs in the feed
+    #[serde(default)]
+    pub hide_reposts: bool,
+
+    /// Hide quote posts in the feed
+    #[serde(default)]
+    pub hide_quote_posts: bool,
+
+    /// Experimental: enable merged feed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lab_merge_feed_enabled: Option<bool>,
+}
+
+impl FeedViewPreferences {
+    /// Create new feed view preferences with all content visible
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::FeedViewPreferences;
+    /// let prefs = FeedViewPreferences::new();
+    /// assert!(!prefs.hide_replies);
+    /// assert!(!prefs.hide_reposts);
+    /// ```
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create preferences with replies hidden
+    pub fn with_replies_hidden(mut self) -> Self {
+        self.hide_replies = true;
+        self
+    }
+
+    /// Create preferences with reposts hidden
+    pub fn with_reposts_hidden(mut self) -> Self {
+        self.hide_reposts = true;
+        self
+    }
+
+    /// Create preferences with quote posts hidden
+    pub fn with_quote_posts_hidden(mut self) -> Self {
+        self.hide_quote_posts = true;
+        self
+    }
+
+    /// Check if a feed post should be visible based on preferences
+    ///
+    /// Returns `true` if the post should be shown, `false` if it should be filtered out.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::{FeedViewPreferences, FeedViewPost, PostView, FeedReason};
+    /// # use app_core::profiles::ProfileViewBasic;
+    /// # let create_post = || PostView {
+    /// #     uri: "test".to_string(),
+    /// #     cid: "test".to_string(),
+    /// #     author: ProfileViewBasic {
+    /// #         did: "test".to_string(),
+    /// #         handle: "test.bsky.social".to_string(),
+    /// #         display_name: None,
+    /// #         avatar: None,
+    /// #         associated: None,
+    /// #         viewer: None,
+    /// #         labels: None,
+    /// #         created_at: None,
+    /// #     },
+    /// #     record: serde_json::json!({"text": "test"}),
+    /// #     embed: None,
+    /// #     reply_count: None,
+    /// #     repost_count: None,
+    /// #     like_count: None,
+    /// #     quote_count: None,
+    /// #     indexed_at: "2024-01-01T00:00:00Z".to_string(),
+    /// #     viewer: None,
+    /// #     labels: None,
+    /// #     threadgate: None,
+    /// # };
+    /// let prefs = FeedViewPreferences::new().with_reposts_hidden();
+    /// let post_with_repost = FeedViewPost {
+    ///     post: create_post(),
+    ///     reply: None,
+    ///     reason: Some(FeedReason::Repost {
+    ///         by: Box::new(ProfileViewBasic {
+    ///             did: "test".to_string(),
+    ///             handle: "test.bsky.social".to_string(),
+    ///             display_name: None,
+    ///             avatar: None,
+    ///             associated: None,
+    ///             viewer: None,
+    ///             labels: None,
+    ///             created_at: None,
+    ///         }),
+    ///         indexed_at: "2024-01-01T00:00:00Z".to_string(),
+    ///     }),
+    ///     feed_context: None,
+    /// };
+    /// assert!(!prefs.should_show_post(&post_with_repost));
+    /// ```
+    pub fn should_show_post(&self, post: &FeedViewPost) -> bool {
+        // Check if it's a repost and should be hidden
+        if self.hide_reposts {
+            if let Some(FeedReason::Repost { .. }) = &post.reason {
+                return false;
+            }
+        }
+
+        // Check if it's a reply and should be hidden
+        if self.hide_replies && post.reply.is_some() {
+            return false;
+        }
+
+        // Check if it's a quote post and should be hidden
+        if self.hide_quote_posts {
+            if let Some(embed) = &post.post.embed {
+                // Check if embed is a record (quote post)
+                if let Some(type_field) = embed.get("$type") {
+                    if let Some(type_str) = type_field.as_str() {
+                        if type_str.contains("record") {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    /// Apply preferences to filter a list of feed posts
+    ///
+    /// Returns a new vector containing only posts that should be visible.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::{FeedViewPreferences, FeedViewPost};
+    /// let prefs = FeedViewPreferences::new();
+    /// let posts: Vec<FeedViewPost> = vec![]; // Your posts here
+    /// let filtered = prefs.filter_posts(posts);
+    /// ```
+    pub fn filter_posts(&self, posts: Vec<FeedViewPost>) -> Vec<FeedViewPost> {
+        posts
+            .into_iter()
+            .filter(|post| self.should_show_post(post))
+            .collect()
+    }
+}
+
+/// Thread view sort order
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThreadSort {
+    /// Sort by hotness/engagement
+    #[default]
+    Hotness,
+    /// Sort by oldest first
+    Oldest,
+    /// Sort by newest first
+    Newest,
+    /// Sort by most likes
+    MostLikes,
+    /// Random order
+    Random,
+}
+
+/// Thread view preferences
+///
+/// Controls how threads/replies are displayed and sorted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadViewPreferences {
+    /// Sort order for thread replies
+    #[serde(default)]
+    pub sort: ThreadSort,
+
+    /// Prioritize showing replies from followed users first
+    #[serde(default = "default_true_thread")]
+    pub prioritize_followed_users: bool,
+
+    /// Experimental: enable tree view for threads
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lab_tree_view_enabled: Option<bool>,
+}
+
+fn default_true_thread() -> bool {
+    true
+}
+
+impl Default for ThreadViewPreferences {
+    fn default() -> Self {
+        Self {
+            sort: ThreadSort::default(),
+            prioritize_followed_users: true,
+            lab_tree_view_enabled: None,
+        }
+    }
+}
+
+impl ThreadViewPreferences {
+    /// Create new thread view preferences with defaults
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::ThreadViewPreferences;
+    /// let prefs = ThreadViewPreferences::new();
+    /// assert!(prefs.prioritize_followed_users);
+    /// ```
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the sort order
+    pub fn with_sort(mut self, sort: ThreadSort) -> Self {
+        self.sort = sort;
+        self
+    }
+
+    /// Set whether to prioritize followed users
+    pub fn with_prioritize_followed(mut self, prioritize: bool) -> Self {
+        self.prioritize_followed_users = prioritize;
+        self
+    }
+}
+
+/// Complete feed preferences including view and thread settings
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct FeedPreferences {
+    /// Feed view preferences (what content to show/hide)
+    #[serde(default)]
+    pub feed_view_prefs: FeedViewPreferences,
+
+    /// Thread view preferences (how to display threads)
+    #[serde(default)]
+    pub thread_view_prefs: ThreadViewPreferences,
+
     /// User's language preferences for content
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_languages: Option<Vec<String>>,
@@ -613,23 +860,76 @@ pub struct FeedPreferences {
 }
 
 impl FeedPreferences {
+    /// Create new feed preferences with defaults
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::FeedPreferences;
+    /// let prefs = FeedPreferences::new();
+    /// assert!(!prefs.feed_view_prefs.hide_replies);
+    /// ```
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Create preferences with content languages
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::FeedPreferences;
+    /// let prefs = FeedPreferences::with_languages(vec!["en".to_string(), "es".to_string()]);
+    /// assert_eq!(prefs.content_languages, Some(vec!["en".to_string(), "es".to_string()]));
+    /// ```
     pub fn with_languages(languages: Vec<String>) -> Self {
         Self {
+            feed_view_prefs: FeedViewPreferences::default(),
+            thread_view_prefs: ThreadViewPreferences::default(),
             content_languages: Some(languages),
             interests: None,
         }
     }
 
     /// Create preferences with interests
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::FeedPreferences;
+    /// let prefs = FeedPreferences::with_interests(vec!["tech".to_string()]);
+    /// assert_eq!(prefs.interests, Some(vec!["tech".to_string()]));
+    /// ```
     pub fn with_interests(interests: Vec<String>) -> Self {
         Self {
+            feed_view_prefs: FeedViewPreferences::default(),
+            thread_view_prefs: ThreadViewPreferences::default(),
             content_languages: None,
             interests: Some(interests),
         }
     }
 
+    /// Set feed view preferences
+    pub fn with_feed_view_prefs(mut self, prefs: FeedViewPreferences) -> Self {
+        self.feed_view_prefs = prefs;
+        self
+    }
+
+    /// Set thread view preferences
+    pub fn with_thread_view_prefs(mut self, prefs: ThreadViewPreferences) -> Self {
+        self.thread_view_prefs = prefs;
+        self
+    }
+
     /// Get content languages as a comma-separated string
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::FeedPreferences;
+    /// let prefs = FeedPreferences::with_languages(vec!["en".to_string(), "es".to_string()]);
+    /// assert_eq!(prefs.content_languages_header(), "en,es");
+    /// ```
     pub fn content_languages_header(&self) -> String {
         self.content_languages
             .as_ref()
@@ -638,11 +938,33 @@ impl FeedPreferences {
     }
 
     /// Get interests as a comma-separated string
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::FeedPreferences;
+    /// let prefs = FeedPreferences::with_interests(vec!["tech".to_string(), "sports".to_string()]);
+    /// assert_eq!(prefs.interests_header(), "tech,sports");
+    /// ```
     pub fn interests_header(&self) -> String {
         self.interests
             .as_ref()
             .map(|interests| interests.join(","))
             .unwrap_or_default()
+    }
+
+    /// Apply feed view preferences to filter posts
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::{FeedPreferences, FeedViewPost};
+    /// let prefs = FeedPreferences::new();
+    /// let posts: Vec<FeedViewPost> = vec![]; // Your posts here
+    /// let filtered = prefs.filter_posts(posts);
+    /// ```
+    pub fn filter_posts(&self, posts: Vec<FeedViewPost>) -> Vec<FeedViewPost> {
+        self.feed_view_prefs.filter_posts(posts)
     }
 }
 
@@ -1274,6 +1596,208 @@ mod tests {
         let _b: ReplyRefPost = serde_json::from_str(&b_json).unwrap();
     }
 
+    // Feed Preferences Tests
+
+    #[test]
+    fn test_feed_view_preferences_default() {
+        let prefs = FeedViewPreferences::default();
+        assert!(!prefs.hide_replies);
+        assert!(!prefs.hide_reposts);
+        assert!(!prefs.hide_quote_posts);
+        assert!(prefs.lab_merge_feed_enabled.is_none());
+    }
+
+    #[test]
+    fn test_feed_view_preferences_builders() {
+        let prefs = FeedViewPreferences::new()
+            .with_replies_hidden()
+            .with_reposts_hidden();
+        assert!(prefs.hide_replies);
+        assert!(prefs.hide_reposts);
+        assert!(!prefs.hide_quote_posts);
+    }
+
+    #[test]
+    fn test_feed_view_preferences_filter_replies() {
+        let prefs = FeedViewPreferences::new().with_replies_hidden();
+
+        let post_without_reply = create_test_feed_post("post1", "did:plc:abc");
+        let post_with_reply = FeedViewPost {
+            post: create_test_post("post2", "did:plc:abc"),
+            reply: Some(ReplyRef {
+                root: ReplyRefPost::PostView(Box::new(create_test_post("root", "did:plc:abc"))),
+                parent: ReplyRefPost::PostView(Box::new(create_test_post("parent", "did:plc:abc"))),
+                grandparent_author: None,
+            }),
+            reason: None,
+            feed_context: None,
+        };
+
+        assert!(prefs.should_show_post(&post_without_reply));
+        assert!(!prefs.should_show_post(&post_with_reply));
+    }
+
+    #[test]
+    fn test_feed_view_preferences_filter_reposts() {
+        let prefs = FeedViewPreferences::new().with_reposts_hidden();
+
+        let normal_post = create_test_feed_post("post1", "did:plc:abc");
+        let repost = FeedViewPost {
+            post: create_test_post("post2", "did:plc:abc"),
+            reply: None,
+            reason: Some(FeedReason::Repost {
+                by: Box::new(ProfileViewBasic {
+                    did: "did:plc:xyz".to_string(),
+                    handle: "reposter.bsky.social".to_string(),
+                    display_name: None,
+                    avatar: None,
+                    associated: None,
+                    viewer: None,
+                    labels: None,
+                    created_at: None,
+                }),
+                indexed_at: "2024-01-01T00:00:00Z".to_string(),
+            }),
+            feed_context: None,
+        };
+
+        assert!(prefs.should_show_post(&normal_post));
+        assert!(!prefs.should_show_post(&repost));
+    }
+
+    #[test]
+    fn test_feed_view_preferences_filter_quote_posts() {
+        let prefs = FeedViewPreferences::new().with_quote_posts_hidden();
+
+        let normal_post = create_test_feed_post("post1", "did:plc:abc");
+        let quote_post = FeedViewPost {
+            post: PostView {
+                uri: "post2".to_string(),
+                cid: "cid2".to_string(),
+                author: ProfileViewBasic {
+                    did: "did:plc:abc".to_string(),
+                    handle: "test.bsky.social".to_string(),
+                    display_name: None,
+                    avatar: None,
+                    associated: None,
+                    viewer: None,
+                    labels: None,
+                    created_at: None,
+                },
+                record: serde_json::json!({"text": "quote"}),
+                embed: Some(serde_json::json!({
+                    "$type": "app.bsky.embed.record",
+                    "record": {
+                        "uri": "at://did:plc:xyz/app.bsky.feed.post/123",
+                        "cid": "cid123"
+                    }
+                })),
+                reply_count: None,
+                repost_count: None,
+                like_count: None,
+                quote_count: None,
+                indexed_at: "2024-01-01T00:00:00Z".to_string(),
+                viewer: None,
+                labels: None,
+                threadgate: None,
+            },
+            reply: None,
+            reason: None,
+            feed_context: None,
+        };
+
+        assert!(prefs.should_show_post(&normal_post));
+        assert!(!prefs.should_show_post(&quote_post));
+    }
+
+    #[test]
+    fn test_feed_view_preferences_filter_posts_batch() {
+        let prefs = FeedViewPreferences::new().with_replies_hidden().with_reposts_hidden();
+
+        let posts = vec![
+            create_test_feed_post("post1", "did:plc:abc"),
+            FeedViewPost {
+                post: create_test_post("post2", "did:plc:abc"),
+                reply: Some(ReplyRef {
+                    root: ReplyRefPost::PostView(Box::new(create_test_post("root", "did:plc:abc"))),
+                    parent: ReplyRefPost::PostView(Box::new(create_test_post("parent", "did:plc:abc"))),
+                    grandparent_author: None,
+                }),
+                reason: None,
+                feed_context: None,
+            },
+            create_test_feed_post("post3", "did:plc:abc"),
+        ];
+
+        let filtered = prefs.filter_posts(posts);
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].post.uri, "post1");
+        assert_eq!(filtered[1].post.uri, "post3");
+    }
+
+    #[test]
+    fn test_thread_sort_default() {
+        let sort = ThreadSort::default();
+        assert_eq!(sort, ThreadSort::Hotness);
+    }
+
+    #[test]
+    fn test_thread_sort_serialization() {
+        let sorts = vec![
+            ThreadSort::Hotness,
+            ThreadSort::Oldest,
+            ThreadSort::Newest,
+            ThreadSort::MostLikes,
+            ThreadSort::Random,
+        ];
+
+        for sort in sorts {
+            let json = serde_json::to_string(&sort).unwrap();
+            let deserialized: ThreadSort = serde_json::from_str(&json).unwrap();
+            assert_eq!(sort, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_thread_view_preferences_default() {
+        let prefs = ThreadViewPreferences::default();
+        assert_eq!(prefs.sort, ThreadSort::Hotness);
+        assert!(prefs.prioritize_followed_users);
+        assert!(prefs.lab_tree_view_enabled.is_none());
+    }
+
+    #[test]
+    fn test_thread_view_preferences_builders() {
+        let prefs = ThreadViewPreferences::new()
+            .with_sort(ThreadSort::Newest)
+            .with_prioritize_followed(false);
+        assert_eq!(prefs.sort, ThreadSort::Newest);
+        assert!(!prefs.prioritize_followed_users);
+    }
+
+    #[test]
+    fn test_thread_view_preferences_serialization() {
+        let prefs = ThreadViewPreferences::new()
+            .with_sort(ThreadSort::MostLikes)
+            .with_prioritize_followed(false);
+
+        let json = serde_json::to_string(&prefs).unwrap();
+        let deserialized: ThreadViewPreferences = serde_json::from_str(&json).unwrap();
+        assert_eq!(prefs, deserialized);
+        assert!(json.contains("most-likes"));
+        assert!(json.contains("prioritizeFollowedUsers"));
+    }
+
+    #[test]
+    fn test_feed_preferences_default() {
+        let prefs = FeedPreferences::default();
+        assert!(!prefs.feed_view_prefs.hide_replies);
+        assert!(!prefs.feed_view_prefs.hide_reposts);
+        assert_eq!(prefs.thread_view_prefs.sort, ThreadSort::Hotness);
+        assert!(prefs.content_languages.is_none());
+        assert!(prefs.interests.is_none());
+    }
+
     #[test]
     fn test_feed_preferences_languages() {
         let prefs = FeedPreferences::with_languages(vec!["en".to_string(), "es".to_string()]);
@@ -1289,10 +1813,129 @@ mod tests {
     }
 
     #[test]
-    fn test_feed_preferences_default() {
-        let prefs = FeedPreferences::default();
+    fn test_feed_preferences_with_view_prefs() {
+        let view_prefs = FeedViewPreferences::new().with_replies_hidden();
+        let prefs = FeedPreferences::new().with_feed_view_prefs(view_prefs);
+        assert!(prefs.feed_view_prefs.hide_replies);
+    }
+
+    #[test]
+    fn test_feed_preferences_with_thread_prefs() {
+        let thread_prefs = ThreadViewPreferences::new().with_sort(ThreadSort::Newest);
+        let prefs = FeedPreferences::new().with_thread_view_prefs(thread_prefs);
+        assert_eq!(prefs.thread_view_prefs.sort, ThreadSort::Newest);
+    }
+
+    #[test]
+    fn test_feed_preferences_filter_posts() {
+        let prefs = FeedPreferences::new()
+            .with_feed_view_prefs(FeedViewPreferences::new().with_replies_hidden());
+
+        let posts = vec![
+            create_test_feed_post("post1", "did:plc:abc"),
+            FeedViewPost {
+                post: create_test_post("post2", "did:plc:abc"),
+                reply: Some(ReplyRef {
+                    root: ReplyRefPost::PostView(Box::new(create_test_post("root", "did:plc:abc"))),
+                    parent: ReplyRefPost::PostView(Box::new(create_test_post("parent", "did:plc:abc"))),
+                    grandparent_author: None,
+                }),
+                reason: None,
+                feed_context: None,
+            },
+        ];
+
+        let filtered = prefs.filter_posts(posts);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].post.uri, "post1");
+    }
+
+    #[test]
+    fn test_feed_preferences_serialization() {
+        let prefs = FeedPreferences {
+            feed_view_prefs: FeedViewPreferences::new()
+                .with_replies_hidden()
+                .with_reposts_hidden(),
+            thread_view_prefs: ThreadViewPreferences::new()
+                .with_sort(ThreadSort::Newest)
+                .with_prioritize_followed(false),
+            content_languages: Some(vec!["en".to_string()]),
+            interests: Some(vec!["tech".to_string()]),
+        };
+
+        let json = serde_json::to_string_pretty(&prefs).unwrap();
+        let deserialized: FeedPreferences = serde_json::from_str(&json).unwrap();
+        assert_eq!(prefs, deserialized);
+        assert!(json.contains("feedViewPrefs"));
+        assert!(json.contains("threadViewPrefs"));
+        assert!(json.contains("hideReplies"));
+        assert!(json.contains("hideReposts"));
+    }
+
+    #[test]
+    fn test_feed_view_preferences_serialization() {
+        let prefs = FeedViewPreferences::new()
+            .with_replies_hidden()
+            .with_quote_posts_hidden();
+
+        let json = serde_json::to_string(&prefs).unwrap();
+        let deserialized: FeedViewPreferences = serde_json::from_str(&json).unwrap();
+        assert_eq!(prefs, deserialized);
+        assert!(json.contains("hideReplies"));
+        assert!(json.contains("hideQuotePosts"));
+    }
+
+    #[test]
+    fn test_feed_preferences_empty_headers() {
+        let prefs = FeedPreferences::new();
         assert_eq!(prefs.content_languages_header(), "");
         assert_eq!(prefs.interests_header(), "");
+    }
+
+    #[test]
+    fn test_multiple_filters_combined() {
+        let prefs = FeedViewPreferences::new()
+            .with_replies_hidden()
+            .with_reposts_hidden()
+            .with_quote_posts_hidden();
+
+        // Normal post - should show
+        let normal_post = create_test_feed_post("post1", "did:plc:abc");
+        assert!(prefs.should_show_post(&normal_post));
+
+        // Reply - should hide
+        let reply_post = FeedViewPost {
+            post: create_test_post("post2", "did:plc:abc"),
+            reply: Some(ReplyRef {
+                root: ReplyRefPost::PostView(Box::new(create_test_post("root", "did:plc:abc"))),
+                parent: ReplyRefPost::PostView(Box::new(create_test_post("parent", "did:plc:abc"))),
+                grandparent_author: None,
+            }),
+            reason: None,
+            feed_context: None,
+        };
+        assert!(!prefs.should_show_post(&reply_post));
+
+        // Repost - should hide
+        let repost = FeedViewPost {
+            post: create_test_post("post3", "did:plc:abc"),
+            reply: None,
+            reason: Some(FeedReason::Repost {
+                by: Box::new(ProfileViewBasic {
+                    did: "did:plc:xyz".to_string(),
+                    handle: "reposter.bsky.social".to_string(),
+                    display_name: None,
+                    avatar: None,
+                    associated: None,
+                    viewer: None,
+                    labels: None,
+                    created_at: None,
+                }),
+                indexed_at: "2024-01-01T00:00:00Z".to_string(),
+            }),
+            feed_context: None,
+        };
+        assert!(!prefs.should_show_post(&repost));
     }
 
     #[test]
