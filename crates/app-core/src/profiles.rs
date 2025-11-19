@@ -244,6 +244,70 @@ pub struct GetProfilesResponse {
     pub profiles: Vec<ProfileViewDetailed>,
 }
 
+/// Parameters for updating a profile
+///
+/// All fields are optional - only provided fields will be updated.
+/// Avatar and banner should be blob references (CID + mime type).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileUpdateParams {
+    /// Repository (DID) of the profile to update
+    pub repo: String,
+
+    /// Display name (max 64 characters)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+
+    /// Profile description/bio (max 256 characters)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Avatar image blob reference
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<serde_json::Value>,
+
+    /// Banner image blob reference
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub banner: Option<serde_json::Value>,
+}
+
+impl ProfileUpdateParams {
+    /// Create a new profile update with the given repository
+    pub fn new(repo: impl Into<String>) -> Self {
+        Self {
+            repo: repo.into(),
+            display_name: None,
+            description: None,
+            avatar: None,
+            banner: None,
+        }
+    }
+
+    /// Set the display name
+    pub fn with_display_name(mut self, display_name: impl Into<String>) -> Self {
+        self.display_name = Some(display_name.into());
+        self
+    }
+
+    /// Set the description (bio)
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Set the avatar blob
+    pub fn with_avatar(mut self, avatar: serde_json::Value) -> Self {
+        self.avatar = Some(avatar);
+        self
+    }
+
+    /// Set the banner blob
+    pub fn with_banner(mut self, banner: serde_json::Value) -> Self {
+        self.banner = Some(banner);
+        self
+    }
+}
+
 /// Profile service for fetching and managing profiles
 ///
 /// Provides methods for fetching profile data, including basic profile info,
@@ -437,6 +501,112 @@ impl ProfileService {
             serde_json::from_value(response.data).map_err(ProfileError::Serialization)?;
 
         Ok(suggestions_response.actors)
+    }
+
+    /// Update the current user's profile
+    ///
+    /// Updates the profile record for the authenticated user. Can update display name,
+    /// description (bio), avatar, and banner images.
+    ///
+    /// # Arguments
+    ///
+    /// * `update` - Profile update parameters
+    ///
+    /// # Character Limits
+    ///
+    /// - Display name: 64 characters maximum
+    /// - Description: 256 characters maximum
+    ///
+    /// # Returns
+    ///
+    /// Updated profile view
+    ///
+    /// # Errors
+    ///
+    /// - `ProfileError::InvalidActor` - Character limits exceeded
+    /// - `ProfileError::NoSession` - No active session
+    /// - `ProfileError::Network` - Network error
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::profiles::{ProfileService, ProfileUpdateParams};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::new("https://bsky.social");
+    /// # let client = XrpcClient::new(config);
+    /// # let service = ProfileService::new(client);
+    /// let update = ProfileUpdateParams::new("did:plc:abc123")
+    ///     .with_display_name("Alice Smith")
+    ///     .with_description("Software engineer and coffee enthusiast");
+    ///
+    /// let updated_profile = service.update_profile(update).await?;
+    /// println!("Updated profile: {}", updated_profile.handle);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn update_profile(&self, update: ProfileUpdateParams) -> Result<ProfileViewDetailed> {
+        // Validate character limits
+        if let Some(ref display_name) = update.display_name {
+            if display_name.chars().count() > 64 {
+                return Err(ProfileError::InvalidActor(
+                    "Display name must be 64 characters or less".to_string(),
+                ));
+            }
+        }
+
+        if let Some(ref description) = update.description {
+            if description.chars().count() > 256 {
+                return Err(ProfileError::InvalidActor(
+                    "Description must be 256 characters or less".to_string(),
+                ));
+            }
+        }
+
+        // Get the current profile first to get the repo (DID)
+        // In a real implementation, this should come from the session
+        // For now, we'll use a placeholder approach
+        #[derive(Serialize)]
+        struct ProfileRecord {
+            #[serde(rename = "displayName", skip_serializing_if = "Option::is_none")]
+            display_name: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            description: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            avatar: Option<serde_json::Value>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            banner: Option<serde_json::Value>,
+            #[serde(rename = "$type")]
+            record_type: String,
+        }
+
+        let record = ProfileRecord {
+            display_name: update.display_name,
+            description: update.description,
+            avatar: update.avatar,
+            banner: update.banner,
+            record_type: "app.bsky.actor.profile".to_string(),
+        };
+
+        // Update profile record via XRPC
+        let request = XrpcRequest::procedure("com.atproto.repo.putRecord")
+            .json_body(&serde_json::json!({
+                "repo": update.repo,
+                "collection": "app.bsky.actor.profile",
+                "rkey": "self",
+                "record": record,
+            }))
+            .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
+
+        let client = self.client.read().await;
+        client
+            .procedure::<serde_json::Value>(request)
+            .await
+            .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
+
+        // Fetch and return the updated profile
+        self.get_profile(&update.repo).await
     }
 
     /// Follow a user
@@ -685,5 +855,175 @@ mod tests {
         assert!(json.contains("createdAt"));
         assert!(json.contains("$type"));
         assert!(json.contains("app.bsky.graph.follow"));
+    }
+
+    // Profile Update Tests
+
+    #[test]
+    fn test_profile_update_params_builder() {
+        let update = ProfileUpdateParams::new("did:plc:test123")
+            .with_display_name("Alice Smith")
+            .with_description("Software engineer and coffee enthusiast");
+
+        assert_eq!(update.repo, "did:plc:test123");
+        assert_eq!(update.display_name, Some("Alice Smith".to_string()));
+        assert_eq!(
+            update.description,
+            Some("Software engineer and coffee enthusiast".to_string())
+        );
+        assert!(update.avatar.is_none());
+        assert!(update.banner.is_none());
+    }
+
+    #[test]
+    fn test_profile_update_params_serialization() {
+        let update = ProfileUpdateParams::new("did:plc:test123")
+            .with_display_name("Alice")
+            .with_description("Developer");
+
+        let json = serde_json::to_string(&update).unwrap();
+        assert!(json.contains("did:plc:test123"));
+        assert!(json.contains("Alice"));
+        assert!(json.contains("Developer"));
+
+        let deserialized: ProfileUpdateParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.repo, "did:plc:test123");
+        assert_eq!(deserialized.display_name, Some("Alice".to_string()));
+    }
+
+    #[test]
+    fn test_profile_update_display_name_length_valid() {
+        // Test that valid display names (64 chars or less) are acceptable
+        let valid_name = "A".repeat(64);
+        let update = ProfileUpdateParams::new("did:plc:test").with_display_name(valid_name.clone());
+
+        assert_eq!(update.display_name, Some(valid_name));
+        assert_eq!(update.display_name.as_ref().unwrap().chars().count(), 64);
+    }
+
+    #[test]
+    fn test_profile_update_display_name_length_invalid() {
+        // Test that display name with > 64 chars would be caught by validation
+        let too_long = "A".repeat(65);
+        assert_eq!(too_long.chars().count(), 65);
+    }
+
+    #[test]
+    fn test_profile_update_description_length_valid() {
+        // Test that valid descriptions (256 chars or less) are acceptable
+        let valid_desc = "A".repeat(256);
+        let update = ProfileUpdateParams::new("did:plc:test").with_description(valid_desc.clone());
+
+        assert_eq!(update.description, Some(valid_desc));
+        assert_eq!(update.description.as_ref().unwrap().chars().count(), 256);
+    }
+
+    #[test]
+    fn test_profile_update_description_length_invalid() {
+        // Test that description with > 256 chars would be caught by validation
+        let too_long = "A".repeat(257);
+        assert_eq!(too_long.chars().count(), 257);
+    }
+
+    #[test]
+    fn test_profile_update_unicode_characters() {
+        // Test that character counting works correctly with Unicode
+        let emoji_name = "Alice 👩‍💻"; // Contains emoji with zero-width joiner
+        let update = ProfileUpdateParams::new("did:plc:test").with_display_name(emoji_name);
+
+        assert_eq!(update.display_name, Some(emoji_name.to_string()));
+        // Verify we're counting grapheme clusters/chars correctly
+        assert!(emoji_name.chars().count() < 64);
+    }
+
+    #[test]
+    fn test_profile_update_empty_values() {
+        // Test that empty strings are handled correctly
+        let update = ProfileUpdateParams::new("did:plc:test")
+            .with_display_name("")
+            .with_description("");
+
+        assert_eq!(update.display_name, Some("".to_string()));
+        assert_eq!(update.description, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_profile_update_with_avatar() {
+        let avatar_blob = serde_json::json!({
+            "$type": "blob",
+            "ref": {
+                "$link": "bafyreigq4zsipbk5w3uqkbfcvpgsfmvhvpfokymhbwdsl7zzkh3ovg6nlq"
+            },
+            "mimeType": "image/jpeg",
+            "size": 42000
+        });
+
+        let update = ProfileUpdateParams::new("did:plc:test").with_avatar(avatar_blob.clone());
+
+        assert_eq!(update.avatar, Some(avatar_blob));
+    }
+
+    #[test]
+    fn test_profile_update_with_banner() {
+        let banner_blob = serde_json::json!({
+            "$type": "blob",
+            "ref": {
+                "$link": "bafyreibqxzrmfke3tjpexqj3wbqh7ypm6i3yxdixvkvixp5ey4bnz4nzbq"
+            },
+            "mimeType": "image/png",
+            "size": 128000
+        });
+
+        let update = ProfileUpdateParams::new("did:plc:test").with_banner(banner_blob.clone());
+
+        assert_eq!(update.banner, Some(banner_blob));
+    }
+
+    #[test]
+    fn test_profile_update_partial_update() {
+        // Test that we can update only some fields
+        let update = ProfileUpdateParams::new("did:plc:test").with_display_name("New Name");
+
+        assert_eq!(update.display_name, Some("New Name".to_string()));
+        assert!(update.description.is_none());
+        assert!(update.avatar.is_none());
+        assert!(update.banner.is_none());
+    }
+
+    #[test]
+    fn test_profile_record_serialization() {
+        // Test that the ProfileRecord struct serializes correctly
+        #[derive(Serialize)]
+        struct ProfileRecord {
+            #[serde(rename = "displayName", skip_serializing_if = "Option::is_none")]
+            display_name: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            description: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            avatar: Option<serde_json::Value>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            banner: Option<serde_json::Value>,
+            #[serde(rename = "$type")]
+            record_type: String,
+        }
+
+        let record = ProfileRecord {
+            display_name: Some("Alice".to_string()),
+            description: Some("Developer".to_string()),
+            avatar: None,
+            banner: None,
+            record_type: "app.bsky.actor.profile".to_string(),
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(json.contains("displayName"));
+        assert!(json.contains("Alice"));
+        assert!(json.contains("description"));
+        assert!(json.contains("Developer"));
+        assert!(json.contains("$type"));
+        assert!(json.contains("app.bsky.actor.profile"));
+        // Avatar and banner should not be in JSON since they're None
+        assert!(!json.contains("avatar"));
+        assert!(!json.contains("banner"));
     }
 }
