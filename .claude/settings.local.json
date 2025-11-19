@@ -41,7 +41,10 @@
       "Bash(cd:*)",
       "Bash(scriptslint.bat:*)",
       "Bash(scriptsformat.bat)",
-      "Bash(cargo fmt:*)"
+      "Bash(cargo fmt:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git reset:*)"
     ],
     "deny": [],
     "ask": []

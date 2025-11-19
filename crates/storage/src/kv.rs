@@ -3,7 +3,7 @@
 //! This module provides a fast, type-safe key-value store using sled,
 //! with support for scoping, encryption, and change notifications.
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sled::Db;
 use std::sync::Arc;
 use thiserror::Error;
@@ -338,6 +338,19 @@ impl DeviceStore {
     }
 }
 
+/// Exported account data structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountDataExport {
+    /// Account ID
+    pub account_id: String,
+    /// Key-value pairs for this account
+    pub data: Vec<(String, serde_json::Value)>,
+    /// Total size in bytes
+    pub size_bytes: usize,
+    /// Number of keys
+    pub key_count: usize,
+}
+
 /// Scoped key-value store for account-level settings
 pub struct AccountStore {
     kv: Arc<KvStore>,
@@ -386,6 +399,152 @@ impl AccountStore {
     /// Check if an account-level key exists
     pub fn contains(&self, account_id: &str, key: &str) -> Result<bool> {
         self.kv.contains_scoped(&["account", account_id, key])
+    }
+
+    /// Get the total data size for an account in bytes
+    ///
+    /// This calculates the size of all keys and values stored for the account.
+    pub fn get_account_data_size(&self, account_id: &str) -> Result<usize> {
+        let prefix = format!("account:{}:", account_id);
+        let mut total_size = 0;
+
+        for item in self.kv.db.scan_prefix(prefix.as_bytes()) {
+            let (key, value) = item?;
+            total_size += key.len() + value.len();
+        }
+
+        Ok(total_size)
+    }
+
+    /// Get batch of account-level values
+    ///
+    /// Returns a vector of (key, Option<value>) tuples for each requested key.
+    /// If a key doesn't exist, the value will be None.
+    pub fn get_many<T>(&self, account_id: &str, keys: &[&str]) -> Result<Vec<(String, Option<T>)>>
+    where
+        T: DeserializeOwned,
+    {
+        let mut results = Vec::with_capacity(keys.len());
+        for key in keys {
+            let value = self.get(account_id, key)?;
+            results.push(((*key).to_string(), value));
+        }
+        Ok(results)
+    }
+
+    /// Set batch of account-level values
+    ///
+    /// Atomically sets multiple key-value pairs for an account.
+    /// Returns the number of keys successfully set.
+    pub fn set_many<T>(&self, account_id: &str, items: &[(&str, &T)]) -> Result<usize>
+    where
+        T: Serialize,
+    {
+        let mut count = 0;
+        for (key, value) in items {
+            self.set(account_id, key, value)?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    /// Export all data for an account
+    ///
+    /// Returns an `AccountDataExport` containing all key-value pairs,
+    /// total size, and metadata for the specified account.
+    pub fn export_account_data(&self, account_id: &str) -> Result<AccountDataExport> {
+        let prefix = format!("account:{}:", account_id);
+        let mut data = Vec::new();
+        let mut total_size = 0;
+
+        for item in self.kv.db.scan_prefix(prefix.as_bytes()) {
+            let (key, value) = item?;
+            total_size += key.len() + value.len();
+
+            // Extract the key part after the account prefix
+            if let Ok(key_str) = String::from_utf8(key.to_vec()) {
+                // Remove the "account:{account_id}:" prefix to get just the key name
+                if let Some(stripped_key) = key_str.strip_prefix(&prefix) {
+                    if let Ok(value_json) = serde_json::from_slice::<serde_json::Value>(&value) {
+                        data.push((stripped_key.to_string(), value_json));
+                    }
+                }
+            }
+        }
+
+        Ok(AccountDataExport {
+            account_id: account_id.to_string(),
+            key_count: data.len(),
+            size_bytes: total_size,
+            data,
+        })
+    }
+
+    /// Import data for an account
+    ///
+    /// Imports all key-value pairs from an `AccountDataExport`.
+    /// This will overwrite existing data with the same keys.
+    /// Returns the number of keys imported.
+    pub fn import_account_data(&self, export: &AccountDataExport) -> Result<usize> {
+        let mut count = 0;
+        for (key, value) in &export.data {
+            self.kv.set_scoped(&["account", &export.account_id, key], value)?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    /// Migrate all data from one account to another
+    ///
+    /// Copies all data from `from_account_id` to `to_account_id`.
+    /// The source account data is preserved (not deleted).
+    /// Returns the number of keys migrated.
+    pub fn migrate_account_data(&self, from_account_id: &str, to_account_id: &str) -> Result<usize> {
+        let export = self.export_account_data(from_account_id)?;
+        let mut migrated_export = export;
+        migrated_export.account_id = to_account_id.to_string();
+        self.import_account_data(&migrated_export)
+    }
+
+    /// Get all account IDs that have data stored
+    ///
+    /// Returns a list of unique account IDs found in the store.
+    pub fn list_accounts(&self) -> Result<Vec<String>> {
+        let prefix = "account:";
+        let keys = self.kv.keys_with_prefix(prefix)?;
+
+        let mut account_ids = std::collections::HashSet::new();
+        for key in keys {
+            // Extract account ID from key format: "account:{account_id}:{key}"
+            if let Some(rest) = key.strip_prefix(prefix) {
+                if let Some(account_id) = rest.split(':').next() {
+                    account_ids.insert(account_id.to_string());
+                }
+            }
+        }
+
+        let mut accounts: Vec<String> = account_ids.into_iter().collect();
+        accounts.sort();
+        Ok(accounts)
+    }
+
+    /// Clean up data for accounts not in the provided list
+    ///
+    /// Removes all data for accounts that are not in `valid_account_ids`.
+    /// Useful for removing orphaned data after account deletions.
+    /// Returns the number of keys removed.
+    pub fn cleanup_orphaned_data(&self, valid_account_ids: &[&str]) -> Result<usize> {
+        let valid_set: std::collections::HashSet<&str> = valid_account_ids.iter().copied().collect();
+        let all_accounts = self.list_accounts()?;
+
+        let mut removed_count = 0;
+        for account_id in all_accounts {
+            if !valid_set.contains(account_id.as_str()) {
+                removed_count += self.remove_account(&account_id)?;
+            }
+        }
+
+        Ok(removed_count)
     }
 }
 
@@ -570,6 +729,233 @@ mod tests {
 
         assert!(!account.contains("alice", "display_name").unwrap());
         assert!(account.contains("bob", "display_name").unwrap());
+    }
+
+    #[test]
+    fn test_account_data_size() {
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account = AccountStore::new(kv);
+
+        // Initially no data
+        let size = account.get_account_data_size("alice").unwrap();
+        assert_eq!(size, 0);
+
+        // Add some data
+        account.set("alice", "name", &"Alice".to_string()).unwrap();
+        account.set("alice", "age", &30).unwrap();
+        account.set("alice", "active", &true).unwrap();
+
+        // Should have non-zero size
+        let size = account.get_account_data_size("alice").unwrap();
+        assert!(size > 0);
+
+        // Different account should have zero size
+        let bob_size = account.get_account_data_size("bob").unwrap();
+        assert_eq!(bob_size, 0);
+    }
+
+    #[test]
+    fn test_batch_operations() {
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account = AccountStore::new(kv);
+
+        // Batch set
+        let items = [
+            ("name", &"Alice".to_string()),
+            ("email", &"alice@example.com".to_string()),
+            ("active", &"true".to_string()),
+        ];
+        let count = account.set_many("alice", &items).unwrap();
+        assert_eq!(count, 3);
+
+        // Batch get
+        let keys = ["name", "email", "active", "nonexistent"];
+        let results: Vec<(String, Option<String>)> =
+            account.get_many("alice", &keys).unwrap();
+
+        assert_eq!(results.len(), 4);
+        assert_eq!(results[0].1, Some("Alice".to_string()));
+        assert_eq!(results[1].1, Some("alice@example.com".to_string()));
+        assert_eq!(results[2].1, Some("true".to_string()));
+        assert_eq!(results[3].1, None);
+    }
+
+    #[test]
+    fn test_export_import_account_data() {
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account = AccountStore::new(kv);
+
+        // Set up test data
+        account.set("alice", "name", &"Alice".to_string()).unwrap();
+        account.set("alice", "age", &30).unwrap();
+        account.set("alice", "active", &true).unwrap();
+
+        // Export data
+        let export = account.export_account_data("alice").unwrap();
+        assert_eq!(export.account_id, "alice");
+        assert_eq!(export.key_count, 3);
+        assert!(export.size_bytes > 0);
+        assert_eq!(export.data.len(), 3);
+
+        // Verify exported data contains expected keys
+        let keys: Vec<&String> = export.data.iter().map(|(k, _)| k).collect();
+        assert!(keys.contains(&&"name".to_string()));
+        assert!(keys.contains(&&"age".to_string()));
+        assert!(keys.contains(&&"active".to_string()));
+
+        // Create new account and import
+        let import_count = account.import_account_data(&export).unwrap();
+        assert_eq!(import_count, 3);
+
+        // Verify imported data
+        let name: Option<String> = account.get("alice", "name").unwrap();
+        assert_eq!(name, Some("Alice".to_string()));
+
+        let age: Option<i32> = account.get("alice", "age").unwrap();
+        assert_eq!(age, Some(30));
+
+        let active: Option<bool> = account.get("alice", "active").unwrap();
+        assert_eq!(active, Some(true));
+    }
+
+    #[test]
+    fn test_migrate_account_data() {
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account = AccountStore::new(kv);
+
+        // Set up source account data
+        account.set("alice", "name", &"Alice".to_string()).unwrap();
+        account.set("alice", "age", &30).unwrap();
+        account.set("alice", "theme", &"dark".to_string()).unwrap();
+
+        // Migrate to new account
+        let migrated = account.migrate_account_data("alice", "alice_new").unwrap();
+        assert_eq!(migrated, 3);
+
+        // Verify data exists in new account
+        let name: Option<String> = account.get("alice_new", "name").unwrap();
+        assert_eq!(name, Some("Alice".to_string()));
+
+        let age: Option<i32> = account.get("alice_new", "age").unwrap();
+        assert_eq!(age, Some(30));
+
+        let theme: Option<String> = account.get("alice_new", "theme").unwrap();
+        assert_eq!(theme, Some("dark".to_string()));
+
+        // Verify original account data is preserved
+        let original_name: Option<String> = account.get("alice", "name").unwrap();
+        assert_eq!(original_name, Some("Alice".to_string()));
+    }
+
+    #[test]
+    fn test_list_accounts() {
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account = AccountStore::new(kv);
+
+        // Initially no accounts
+        let accounts = account.list_accounts().unwrap();
+        assert_eq!(accounts.len(), 0);
+
+        // Add data for multiple accounts
+        account.set("alice", "name", &"Alice".to_string()).unwrap();
+        account.set("bob", "name", &"Bob".to_string()).unwrap();
+        account.set("charlie", "name", &"Charlie".to_string()).unwrap();
+
+        // Should list all accounts (sorted)
+        let accounts = account.list_accounts().unwrap();
+        assert_eq!(accounts.len(), 3);
+        assert_eq!(accounts, vec!["alice", "bob", "charlie"]);
+
+        // Add more data to existing account
+        account.set("alice", "age", &30).unwrap();
+
+        // Should still have same account count
+        let accounts = account.list_accounts().unwrap();
+        assert_eq!(accounts.len(), 3);
+    }
+
+    #[test]
+    fn test_cleanup_orphaned_data() {
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account = AccountStore::new(kv);
+
+        // Create data for multiple accounts
+        account.set("alice", "name", &"Alice".to_string()).unwrap();
+        account.set("alice", "age", &30).unwrap();
+        account.set("bob", "name", &"Bob".to_string()).unwrap();
+        account.set("charlie", "name", &"Charlie".to_string()).unwrap();
+        account.set("david", "name", &"David".to_string()).unwrap();
+
+        // Verify all accounts exist
+        let accounts = account.list_accounts().unwrap();
+        assert_eq!(accounts.len(), 4);
+
+        // Clean up, keeping only alice and bob
+        let valid_accounts = ["alice", "bob"];
+        let removed = account.cleanup_orphaned_data(&valid_accounts).unwrap();
+        assert_eq!(removed, 2); // charlie and david (1 key each)
+
+        // Verify only valid accounts remain
+        let accounts = account.list_accounts().unwrap();
+        assert_eq!(accounts.len(), 2);
+        assert_eq!(accounts, vec!["alice", "bob"]);
+
+        // Verify alice data is intact
+        let alice_name: Option<String> = account.get("alice", "name").unwrap();
+        assert_eq!(alice_name, Some("Alice".to_string()));
+
+        // Verify charlie data is gone
+        let charlie_name: Option<String> = account.get("charlie", "name").unwrap();
+        assert_eq!(charlie_name, None);
+    }
+
+    #[test]
+    fn test_export_empty_account() {
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account = AccountStore::new(kv);
+
+        // Export account with no data
+        let export = account.export_account_data("nonexistent").unwrap();
+        assert_eq!(export.account_id, "nonexistent");
+        assert_eq!(export.key_count, 0);
+        assert_eq!(export.size_bytes, 0);
+        assert_eq!(export.data.len(), 0);
+    }
+
+    #[test]
+    fn test_import_overwrites_existing() {
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account = AccountStore::new(kv);
+
+        // Set initial data
+        account.set("alice", "name", &"Alice".to_string()).unwrap();
+        account.set("alice", "age", &30).unwrap();
+
+        // Create export with different data
+        let export = AccountDataExport {
+            account_id: "alice".to_string(),
+            data: vec![
+                ("name".to_string(), serde_json::json!("Alice Updated")),
+                ("age".to_string(), serde_json::json!(31)),
+                ("new_field".to_string(), serde_json::json!("new value")),
+            ],
+            size_bytes: 0,
+            key_count: 3,
+        };
+
+        // Import should overwrite
+        let imported = account.import_account_data(&export).unwrap();
+        assert_eq!(imported, 3);
+
+        // Verify updated values
+        let name: Option<String> = account.get("alice", "name").unwrap();
+        assert_eq!(name, Some("Alice Updated".to_string()));
+
+        let age: Option<i32> = account.get("alice", "age").unwrap();
+        assert_eq!(age, Some(31));
+
+        let new_field: Option<String> = account.get("alice", "new_field").unwrap();
+        assert_eq!(new_field, Some("new value".to_string()));
     }
 
     #[test]
