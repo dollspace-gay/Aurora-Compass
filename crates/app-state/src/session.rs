@@ -270,6 +270,7 @@ impl RemoveAccountMutation {
 /// Session state manager
 ///
 /// This provides a high-level API for managing session state reactively.
+#[derive(Clone)]
 pub struct SessionState {
     session_manager: Arc<RwLock<SessionManager>>,
     query_client: QueryClient,

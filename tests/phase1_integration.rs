@@ -33,6 +33,7 @@ async fn test_session_lifecycle_with_persistence() {
             pds_url: Some("https://pds.example.com".to_string()),
             signup_queued: Some(false),
             is_self_hosted: Some(false),
+            app_view_url: None,
         };
 
         manager.add_account(account).await.unwrap();
@@ -73,6 +74,7 @@ async fn test_multi_account_isolation() {
         pds_url: None,
         signup_queued: Some(false),
         is_self_hosted: Some(false),
+        app_view_url: None,
     };
 
     let account2 = SessionAccount {
@@ -89,6 +91,7 @@ async fn test_multi_account_isolation() {
         pds_url: None,
         signup_queued: Some(false),
         is_self_hosted: Some(false),
+        app_view_url: None,
     };
 
     manager.add_account(account1).await.unwrap();
@@ -227,6 +230,7 @@ async fn test_complete_user_scenario() {
         pds_url: Some("https://bsky.social".to_string()),
         signup_queued: Some(false),
         is_self_hosted: Some(false),
+        app_view_url: None,
     };
 
     session_manager.add_account(user_account).await.unwrap();
@@ -314,6 +318,7 @@ async fn test_error_handling() {
         pds_url: None,
         signup_queued: Some(false),
         is_self_hosted: Some(false),
+        app_view_url: None,
     };
 
     manager.add_account(account.clone()).await.unwrap();
