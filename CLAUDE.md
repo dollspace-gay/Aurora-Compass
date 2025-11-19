@@ -153,6 +153,16 @@ GIT WORKFLOW (AUTO-SYNC)
 - Ask for clarification if requirements are unclear
 - Discuss approach before starting large/complex files
 
+### 11. Git Workflow
+- **NEVER** create git commits automatically
+- **NEVER** use `git commit` without explicit user instruction
+- **NEVER** use `git push` without explicit user instruction
+- The user will handle all git commits and pushes manually
+- You may stage files with `git add` only when explicitly asked
+- You may run `git status` and `git diff` to check changes
+- You may run `git log` to view history
+- Focus on code quality and testing; leave version control to the user
+
 ## What to Do When Facing Complexity
 
 **DON'T:**
