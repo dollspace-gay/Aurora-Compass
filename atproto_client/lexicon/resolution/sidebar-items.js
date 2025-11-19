@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RefResolutionError"],"fn":["collect_refs_from_def","collect_refs_from_type","parse_ref"],"struct":["SchemaRegistry"],"type":["Result"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DatabaseError","SynchronousMode"],"struct":["DatabaseConfig","DatabaseTransaction","MigrationDefinition","SqliteDatabase"],"trait":["Database"],"type":["Result"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["MutationError","MutationState"],"struct":["MutationClient","MutationConfig","MutationContext","OptimisticUpdate"],"trait":["Mutation"],"type":["Result"]};

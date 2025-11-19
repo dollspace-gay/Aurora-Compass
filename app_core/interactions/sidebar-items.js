@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["InteractionError"],"struct":["CreateRecordResponse","EmbedRecord","InteractionCounts","InteractionService","LikeRecord","QuoteEmbed","RepostRecord","SubjectRef","ViaRef"],"type":["Result"]};

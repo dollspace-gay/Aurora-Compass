@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ColorMode"],"fn":["default_font_size","default_true"],"struct":["AccountPreferences","AppPersistedState","LanguagePrefs","OnboardingState"]};

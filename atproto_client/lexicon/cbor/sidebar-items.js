@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CborError"],"fn":["decode_record","encode_record"],"struct":["BlobRef","CidLink","TypedRecord"],"type":["Result"]};

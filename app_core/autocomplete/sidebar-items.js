@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CACHE_EXPIRATION","MAX_AUTOCOMPLETE_RESULTS"],"enum":["AutocompleteError","AutocompleteResult"],"struct":["ActorProfile","ActorSearchResponse","AutocompleteService","CacheEntry","HashtagSuggestion"],"type":["Result"]};

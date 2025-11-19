@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PersistenceError"],"struct":["MigratableState","PersistedState","PersistenceConfig","VersionedState"],"trait":["StateMigration"],"type":["Result"]};

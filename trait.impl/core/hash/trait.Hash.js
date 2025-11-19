@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["atproto_client",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.91.1/core/hash/trait.Hash.html\" title=\"trait core::hash::Hash\">Hash</a> for <a class=\"enum\" href=\"atproto_client/lexicon/formats/enum.StringFormat.html\" title=\"enum atproto_client::lexicon::formats::StringFormat\">StringFormat</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.91.1/core/hash/trait.Hash.html\" title=\"trait core::hash::Hash\">Hash</a> for <a class=\"struct\" href=\"atproto_client/types/struct.AtUri.html\" title=\"struct atproto_client::types::AtUri\">AtUri</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.91.1/core/hash/trait.Hash.html\" title=\"trait core::hash::Hash\">Hash</a> for <a class=\"struct\" href=\"atproto_client/types/struct.Did.html\" title=\"struct atproto_client::types::Did\">Did</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.91.1/core/hash/trait.Hash.html\" title=\"trait core::hash::Hash\">Hash</a> for <a class=\"struct\" href=\"atproto_client/types/struct.Handle.html\" title=\"struct atproto_client::types::Handle\">Handle</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.91.1/core/hash/trait.Hash.html\" title=\"trait core::hash::Hash\">Hash</a> for <a class=\"struct\" href=\"atproto_client/types/struct.Tid.html\" title=\"struct atproto_client::types::Tid\">Tid</a>"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1377]}

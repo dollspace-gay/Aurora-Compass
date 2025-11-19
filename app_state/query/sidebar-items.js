@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["QueryError","QueryState"],"struct":["QueryClient","QueryConfig","QueryKey","QueryMeta"],"trait":["Query"],"type":["Result"]};

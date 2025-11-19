@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_POST_LENGTH"],"enum":["SuggestionType"],"struct":["AutocompleteSuggestion","RichTextEditor"]};
