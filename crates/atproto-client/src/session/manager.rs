@@ -91,6 +91,35 @@ pub struct SessionStorage {
     pub current_account_did: Option<String>,
 }
 
+/// Account export data structure for backup and portability
+///
+/// This structure contains all data needed to export and import an account,
+/// including session credentials, preferences, and cached data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountExport {
+    /// Schema version for backward compatibility
+    pub version: u32,
+
+    /// Timestamp of export (ISO 8601 format)
+    pub exported_at: String,
+
+    /// Account session data (including tokens if not redacted)
+    pub account: SessionAccount,
+
+    /// KV store data for this account (preferences, settings, cached data)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_data: Option<storage::kv::AccountDataExport>,
+
+    /// Whether access/refresh tokens are included in the export
+    /// If false, tokens have been redacted for security
+    pub tokens_included: bool,
+
+    /// Whether sensitive data is encrypted
+    /// Note: Encryption is not yet implemented; this field is reserved for future use
+    pub encrypted: bool,
+}
+
 /// Session manager for multi-account support
 ///
 /// The SessionManager handles multiple authenticated accounts and manages the active
@@ -912,6 +941,209 @@ impl SessionManager {
         self.get_account(did)
             .and_then(|account| account.app_view_url.clone())
     }
+
+    /// Export an account for backup or transfer
+    ///
+    /// Creates an `AccountExport` containing all account data including session credentials,
+    /// preferences, and optionally cached data from the KV store.
+    ///
+    /// # Arguments
+    ///
+    /// * `did` - The DID of the account to export
+    /// * `include_tokens` - Whether to include access/refresh tokens (security risk if unencrypted)
+    /// * `include_kv_data` - Whether to include KV store data (preferences, cache)
+    /// * `kv_store` - Optional reference to KV store for exporting account data
+    ///
+    /// # Security Considerations
+    ///
+    /// **WARNING**: Exported files containing tokens should be treated as highly sensitive.
+    /// Anyone with access to the tokens can impersonate the user. Consider:
+    /// - Only including tokens when absolutely necessary
+    /// - Encrypting exports before storage (encryption support planned for future)
+    /// - Storing exports in secure locations only
+    /// - Deleting exports after use
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use atproto_client::session::SessionManager;
+    /// # async fn example(manager: &SessionManager) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Export without tokens (safer for long-term storage)
+    /// let export = manager.export_account("did:plc:abc123", false, true, None).await?;
+    ///
+    /// // Export with tokens (use with caution!)
+    /// let export_with_tokens = manager.export_account(
+    ///     "did:plc:abc123",
+    ///     true,
+    ///     true,
+    ///     None
+    /// ).await?;
+    ///
+    /// // Serialize to JSON
+    /// let json = serde_json::to_string_pretty(&export)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn export_account(
+        &self,
+        did: &str,
+        include_tokens: bool,
+        include_kv_data: bool,
+        kv_store: Option<&storage::kv::AccountStore>,
+    ) -> Result<AccountExport> {
+        // Get the account
+        let account = self
+            .get_account(did)
+            .ok_or_else(|| SessionManagerError::AccountNotFound(did.to_string()))?
+            .clone();
+
+        // Optionally redact tokens for security
+        let mut export_account = account.clone();
+        if !include_tokens {
+            export_account.access_jwt = None;
+            export_account.refresh_jwt = None;
+        }
+
+        // Optionally include KV store data
+        let account_data = if include_kv_data {
+            if let Some(kv) = kv_store {
+                Some(kv.export_account_data(did).map_err(|e| {
+                    SessionManagerError::InvalidOperation(format!(
+                        "Failed to export KV data: {}",
+                        e
+                    ))
+                })?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Get current timestamp in ISO 8601 format
+        let exported_at = chrono::Utc::now().to_rfc3339();
+
+        Ok(AccountExport {
+            version: 1,
+            exported_at,
+            account: export_account,
+            account_data,
+            tokens_included: include_tokens,
+            encrypted: false, // Reserved for future encryption support
+        })
+    }
+
+    /// Export all accounts for backup
+    ///
+    /// Creates a vector of `AccountExport` for all accounts in the manager.
+    ///
+    /// # Arguments
+    ///
+    /// * `include_tokens` - Whether to include access/refresh tokens
+    /// * `include_kv_data` - Whether to include KV store data
+    /// * `kv_store` - Optional reference to KV store for exporting account data
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use atproto_client::session::SessionManager;
+    /// # async fn example(manager: &SessionManager) -> Result<(), Box<dyn std::error::Error>> {
+    /// let exports = manager.export_all_accounts(false, true, None).await?;
+    /// println!("Exported {} accounts", exports.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn export_all_accounts(
+        &self,
+        include_tokens: bool,
+        include_kv_data: bool,
+        kv_store: Option<&storage::kv::AccountStore>,
+    ) -> Result<Vec<AccountExport>> {
+        let mut exports = Vec::new();
+
+        for account in &self.accounts {
+            let export = self
+                .export_account(&account.did, include_tokens, include_kv_data, kv_store)
+                .await?;
+            exports.push(export);
+        }
+
+        Ok(exports)
+    }
+
+    /// Import an account from an export
+    ///
+    /// Imports an account from an `AccountExport`, optionally merging or replacing
+    /// existing account data.
+    ///
+    /// # Arguments
+    ///
+    /// * `export` - The account export to import
+    /// * `merge` - If true, merge with existing data; if false, replace existing account
+    /// * `kv_store` - Optional reference to KV store for importing account data
+    ///
+    /// # Behavior
+    ///
+    /// - If `merge` is true and account exists: Updates session data, merges KV data
+    /// - If `merge` is false and account exists: Replaces all account data
+    /// - If account doesn't exist: Creates new account regardless of merge setting
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use atproto_client::session::{SessionManager, AccountExport};
+    /// # async fn example(manager: &mut SessionManager, export: AccountExport) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Import and merge with existing data
+    /// manager.import_account(export.clone(), true, None).await?;
+    ///
+    /// // Import and replace existing data
+    /// manager.import_account(export, false, None).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn import_account(
+        &mut self,
+        export: AccountExport,
+        merge: bool,
+        kv_store: Option<&storage::kv::AccountStore>,
+    ) -> Result<()> {
+        // Validate schema version
+        if export.version > 1 {
+            return Err(SessionManagerError::InvalidOperation(format!(
+                "Unsupported export version: {}. This version of the app only supports version 1.",
+                export.version
+            )));
+        }
+
+        // Check if account already exists
+        let account_exists = self.get_account(&export.account.did).is_some();
+
+        if account_exists && !merge {
+            // Replace mode: remove existing account data first
+            if let Some(kv) = kv_store {
+                kv.remove_account(&export.account.did).map_err(|e| {
+                    SessionManagerError::InvalidOperation(format!(
+                        "Failed to remove existing KV data: {}",
+                        e
+                    ))
+                })?;
+            }
+        }
+
+        // Add or update the account in session manager
+        self.add_account(export.account.clone()).await?;
+
+        // Import KV store data if provided
+        if let Some(account_data) = export.account_data {
+            if let Some(kv) = kv_store {
+                kv.import_account_data(&account_data).map_err(|e| {
+                    SessionManagerError::InvalidOperation(format!("Failed to import KV data: {}", e))
+                })?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1274,5 +1506,409 @@ mod tests {
                 Some("https://custom.appview".to_string())
             );
         }
+    }
+
+    // Export/Import Tests
+
+    #[tokio::test]
+    async fn test_export_account_without_tokens() {
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        let mut account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:test123".to_string(),
+            "test.bsky.social".to_string(),
+        );
+        account.access_jwt = Some("secret_access_token".to_string());
+        account.refresh_jwt = Some("secret_refresh_token".to_string());
+        account.email = Some("test@example.com".to_string());
+
+        manager.add_account(account).await.unwrap();
+
+        // Export without tokens
+        let export = manager
+            .export_account("did:plc:test123", false, false, None)
+            .await
+            .unwrap();
+
+        // Verify tokens were redacted
+        assert_eq!(export.version, 1);
+        assert_eq!(export.account.did, "did:plc:test123");
+        assert_eq!(export.account.handle, "test.bsky.social");
+        assert_eq!(export.account.email, Some("test@example.com".to_string()));
+        assert!(export.account.access_jwt.is_none());
+        assert!(export.account.refresh_jwt.is_none());
+        assert!(!export.tokens_included);
+        assert!(!export.encrypted);
+        assert!(export.account_data.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_export_account_with_tokens() {
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        let mut account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:test123".to_string(),
+            "test.bsky.social".to_string(),
+        );
+        account.access_jwt = Some("secret_access_token".to_string());
+        account.refresh_jwt = Some("secret_refresh_token".to_string());
+
+        manager.add_account(account).await.unwrap();
+
+        // Export with tokens
+        let export = manager
+            .export_account("did:plc:test123", true, false, None)
+            .await
+            .unwrap();
+
+        // Verify tokens were included
+        assert_eq!(
+            export.account.access_jwt,
+            Some("secret_access_token".to_string())
+        );
+        assert_eq!(
+            export.account.refresh_jwt,
+            Some("secret_refresh_token".to_string())
+        );
+        assert!(export.tokens_included);
+    }
+
+    #[tokio::test]
+    async fn test_export_account_with_kv_data() {
+        use storage::kv::{AccountStore, KvStore};
+        use std::sync::Arc;
+
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        let account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:test123".to_string(),
+            "test.bsky.social".to_string(),
+        );
+        manager.add_account(account).await.unwrap();
+
+        // Create KV store and add some data
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account_store = AccountStore::new(kv);
+        account_store
+            .set("did:plc:test123", "preference1", &"value1".to_string())
+            .unwrap();
+        account_store
+            .set("did:plc:test123", "preference2", &42i32)
+            .unwrap();
+
+        // Export with KV data
+        let export = manager
+            .export_account("did:plc:test123", false, true, Some(&account_store))
+            .await
+            .unwrap();
+
+        // Verify KV data was included
+        assert!(export.account_data.is_some());
+        let kv_data = export.account_data.unwrap();
+        assert_eq!(kv_data.account_id, "did:plc:test123");
+        assert_eq!(kv_data.key_count, 2);
+        assert!(kv_data.size_bytes > 0);
+    }
+
+    #[tokio::test]
+    async fn test_export_all_accounts() {
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        let account1 = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:alice".to_string(),
+            "alice.bsky.social".to_string(),
+        );
+        let account2 = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:bob".to_string(),
+            "bob.bsky.social".to_string(),
+        );
+
+        manager.add_account(account1).await.unwrap();
+        manager.add_account(account2).await.unwrap();
+
+        // Export all accounts
+        let exports = manager
+            .export_all_accounts(false, false, None)
+            .await
+            .unwrap();
+
+        assert_eq!(exports.len(), 2);
+        assert!(exports.iter().any(|e| e.account.did == "did:plc:alice"));
+        assert!(exports.iter().any(|e| e.account.did == "did:plc:bob"));
+    }
+
+    #[tokio::test]
+    async fn test_import_account_new() {
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        let mut account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:imported".to_string(),
+            "imported.bsky.social".to_string(),
+        );
+        account.email = Some("imported@example.com".to_string());
+
+        let export = AccountExport {
+            version: 1,
+            exported_at: chrono::Utc::now().to_rfc3339(),
+            account: account.clone(),
+            account_data: None,
+            tokens_included: false,
+            encrypted: false,
+        };
+
+        // Import new account
+        manager.import_account(export, false, None).await.unwrap();
+
+        // Verify account was imported
+        assert_eq!(manager.list_accounts().len(), 1);
+        let imported = manager.get_account("did:plc:imported").unwrap();
+        assert_eq!(imported.handle, "imported.bsky.social");
+        assert_eq!(imported.email, Some("imported@example.com".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_import_account_merge() {
+        use storage::kv::{AccountStore, KvStore};
+        use std::sync::Arc;
+
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        // Create existing account
+        let mut existing = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:test123".to_string(),
+            "test.bsky.social".to_string(),
+        );
+        existing.email = Some("old@example.com".to_string());
+        manager.add_account(existing).await.unwrap();
+
+        // Create KV store with existing data
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account_store = AccountStore::new(kv);
+        account_store
+            .set("did:plc:test123", "old_key", &"old_value".to_string())
+            .unwrap();
+
+        // Create import with updated email
+        let mut updated = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:test123".to_string(),
+            "test.bsky.social".to_string(),
+        );
+        updated.email = Some("new@example.com".to_string());
+
+        let export = AccountExport {
+            version: 1,
+            exported_at: chrono::Utc::now().to_rfc3339(),
+            account: updated,
+            account_data: None,
+            tokens_included: false,
+            encrypted: false,
+        };
+
+        // Import with merge
+        manager
+            .import_account(export, true, Some(&account_store))
+            .await
+            .unwrap();
+
+        // Verify account was updated
+        let imported = manager.get_account("did:plc:test123").unwrap();
+        assert_eq!(imported.email, Some("new@example.com".to_string()));
+
+        // Verify old KV data still exists (merge mode)
+        let old_value: Option<String> = account_store.get("did:plc:test123", "old_key").unwrap();
+        assert_eq!(old_value, Some("old_value".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_import_account_replace() {
+        use storage::kv::{AccountStore, KvStore, AccountDataExport};
+        use std::sync::Arc;
+
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        // Create existing account
+        let existing = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:test123".to_string(),
+            "test.bsky.social".to_string(),
+        );
+        manager.add_account(existing).await.unwrap();
+
+        // Create KV store with existing data
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account_store = AccountStore::new(kv);
+        account_store
+            .set("did:plc:test123", "old_key", &"old_value".to_string())
+            .unwrap();
+
+        // Create import with new KV data
+        let updated = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:test123".to_string(),
+            "test.bsky.social".to_string(),
+        );
+
+        let kv_export = AccountDataExport {
+            account_id: "did:plc:test123".to_string(),
+            data: vec![("new_key".to_string(), serde_json::json!("new_value"))],
+            size_bytes: 100,
+            key_count: 1,
+        };
+
+        let export = AccountExport {
+            version: 1,
+            exported_at: chrono::Utc::now().to_rfc3339(),
+            account: updated,
+            account_data: Some(kv_export),
+            tokens_included: false,
+            encrypted: false,
+        };
+
+        // Import with replace
+        manager
+            .import_account(export, false, Some(&account_store))
+            .await
+            .unwrap();
+
+        // Verify old KV data was removed (replace mode)
+        let old_value: Option<String> = account_store.get("did:plc:test123", "old_key").unwrap();
+        assert!(old_value.is_none());
+
+        // Verify new KV data was added
+        let new_value: Option<String> = account_store.get("did:plc:test123", "new_key").unwrap();
+        assert_eq!(new_value, Some("new_value".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_import_export_roundtrip() {
+        use storage::kv::{AccountStore, KvStore};
+        use std::sync::Arc;
+
+        let mut manager1 = SessionManager::new_in_memory().await.unwrap();
+
+        // Create account with data
+        let mut account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:roundtrip".to_string(),
+            "roundtrip.bsky.social".to_string(),
+        );
+        account.email = Some("roundtrip@example.com".to_string());
+        account.access_jwt = Some("access_token".to_string());
+        account.refresh_jwt = Some("refresh_token".to_string());
+
+        manager1.add_account(account).await.unwrap();
+
+        // Create KV store with data
+        let kv = Arc::new(KvStore::in_memory().unwrap());
+        let account_store = AccountStore::new(kv.clone());
+        account_store
+            .set("did:plc:roundtrip", "test_key", &"test_value".to_string())
+            .unwrap();
+
+        // Export
+        let export = manager1
+            .export_account("did:plc:roundtrip", true, true, Some(&account_store))
+            .await
+            .unwrap();
+
+        // Import to new manager
+        let mut manager2 = SessionManager::new_in_memory().await.unwrap();
+        let kv2 = Arc::new(KvStore::in_memory().unwrap());
+        let account_store2 = AccountStore::new(kv2);
+
+        manager2
+            .import_account(export, false, Some(&account_store2))
+            .await
+            .unwrap();
+
+        // Verify everything was transferred
+        let imported = manager2.get_account("did:plc:roundtrip").unwrap();
+        assert_eq!(imported.handle, "roundtrip.bsky.social");
+        assert_eq!(imported.email, Some("roundtrip@example.com".to_string()));
+        assert_eq!(imported.access_jwt, Some("access_token".to_string()));
+        assert_eq!(imported.refresh_jwt, Some("refresh_token".to_string()));
+
+        let kv_value: Option<String> = account_store2
+            .get("did:plc:roundtrip", "test_key")
+            .unwrap();
+        assert_eq!(kv_value, Some("test_value".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_import_unsupported_version() {
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        let account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:test".to_string(),
+            "test.bsky.social".to_string(),
+        );
+
+        let export = AccountExport {
+            version: 99, // Future version
+            exported_at: chrono::Utc::now().to_rfc3339(),
+            account,
+            account_data: None,
+            tokens_included: false,
+            encrypted: false,
+        };
+
+        // Should fail with unsupported version error
+        let result = manager.import_account(export, false, None).await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SessionManagerError::InvalidOperation(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_export_nonexistent_account() {
+        let manager = SessionManager::new_in_memory().await.unwrap();
+
+        let result = manager
+            .export_account("did:plc:nonexistent", false, false, None)
+            .await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SessionManagerError::AccountNotFound(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_export_serialization() {
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        let account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:test".to_string(),
+            "test.bsky.social".to_string(),
+        );
+        manager.add_account(account).await.unwrap();
+
+        let export = manager
+            .export_account("did:plc:test", false, false, None)
+            .await
+            .unwrap();
+
+        // Verify JSON serialization
+        let json = serde_json::to_string(&export).unwrap();
+        assert!(json.contains("did:plc:test"));
+        assert!(json.contains("test.bsky.social"));
+
+        // Verify deserialization
+        let deserialized: AccountExport = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.account.did, "did:plc:test");
+        assert_eq!(deserialized.version, 1);
     }
 }
