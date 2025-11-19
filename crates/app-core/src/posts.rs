@@ -633,6 +633,18 @@ pub enum PostError {
     /// Empty post
     #[error("Post cannot be empty (no text and no images)")]
     EmptyPost,
+
+    /// Post not found
+    #[error("Post not found: {0}")]
+    NotFound(String),
+
+    /// Not authorized to delete post
+    #[error("Not authorized to delete this post")]
+    NotAuthorized,
+
+    /// Invalid post URI
+    #[error("Invalid post URI: {0}")]
+    InvalidUri(String),
 }
 
 /// Result type for post operations
@@ -866,6 +878,104 @@ impl PostComposer {
     pub fn chars_remaining(text: &str) -> i32 {
         let count = unicode_segmentation::UnicodeSegmentation::graphemes(text, true).count();
         MAX_POST_LENGTH as i32 - count as i32
+    }
+
+    /// Delete a post
+    ///
+    /// Deletes a post from the user's feed. Only the post author can delete their own posts.
+    ///
+    /// # Arguments
+    ///
+    /// * `uri` - The AT-URI of the post to delete (e.g., "at://did:plc:abc123/app.bsky.feed.post/abc123")
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the post was successfully deleted
+    ///
+    /// # Errors
+    ///
+    /// - `PostError::InvalidUri` - Invalid or malformed post URI
+    /// - `PostError::NotFound` - Post does not exist
+    /// - `PostError::NotAuthorized` - User is not the post author
+    /// - `PostError::NoSession` - No active session
+    /// - `PostError::Xrpc` - XRPC error
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::posts::PostComposer;
+    /// # use atproto_client::xrpc::XrpcClient;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let client = XrpcClient::new(Default::default());
+    /// let composer = PostComposer::new(client);
+    ///
+    /// // Delete a post
+    /// composer.delete_post("at://did:plc:abc123/app.bsky.feed.post/xyz789").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn delete_post(&self, uri: &str) -> PostResult<()> {
+        // Validate URI format
+        if !uri.starts_with("at://") {
+            return Err(PostError::InvalidUri(format!(
+                "URI must start with 'at://': {}",
+                uri
+            )));
+        }
+
+        // Parse the URI to extract repo and rkey
+        // AT-URI format: at://did:plc:abc123/app.bsky.feed.post/rkey
+        let parts: Vec<&str> = uri.trim_start_matches("at://").split('/').collect();
+        if parts.len() != 3 {
+            return Err(PostError::InvalidUri(format!(
+                "Invalid AT-URI format, expected 'at://repo/collection/rkey': {}",
+                uri
+            )));
+        }
+
+        let repo = parts[0];
+        let collection = parts[1];
+        let rkey = parts[2];
+
+        // Verify this is a post collection
+        if collection != "app.bsky.feed.post" {
+            return Err(PostError::InvalidUri(format!(
+                "URI must be for app.bsky.feed.post collection, got: {}",
+                collection
+            )));
+        }
+
+        // Build the deleteRecord request
+        let body = serde_json::json!({
+            "repo": repo,
+            "collection": collection,
+            "rkey": rkey,
+        });
+
+        let request = XrpcRequest::procedure("com.atproto.repo.deleteRecord")
+            .json_body(&body)
+            .map_err(|e| PostError::Xrpc(e.to_string()))?;
+
+        let client = self.client.read().await;
+        let result = client.procedure::<serde_json::Value>(request).await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let err_msg = e.to_string();
+                // Map common error responses
+                if err_msg.contains("RecordNotFound") || err_msg.contains("not found") {
+                    Err(PostError::NotFound(uri.to_string()))
+                } else if err_msg.contains("NotAuthorized")
+                    || err_msg.contains("not authorized")
+                    || err_msg.contains("permission")
+                {
+                    Err(PostError::NotAuthorized)
+                } else {
+                    Err(PostError::Xrpc(err_msg))
+                }
+            }
+        }
     }
 }
 
@@ -1406,5 +1516,176 @@ mod tests {
         assert!(json.contains("bafytest3"));
         assert!(json.contains("Image 0"));
         assert!(json.contains("Image 3"));
+    }
+
+    // Delete post tests
+
+    #[test]
+    fn test_delete_post_invalid_uri_missing_prefix() {
+        // Test URI validation - missing at:// prefix
+        use tokio::runtime::Runtime;
+
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = XrpcClient::new(Default::default());
+            let composer = PostComposer::new(client);
+
+            let result = composer
+                .delete_post("did:plc:abc123/app.bsky.feed.post/xyz789")
+                .await;
+
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), PostError::InvalidUri(_)));
+        });
+    }
+
+    #[test]
+    fn test_delete_post_invalid_uri_wrong_format() {
+        // Test URI validation - wrong format
+        use tokio::runtime::Runtime;
+
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = XrpcClient::new(Default::default());
+            let composer = PostComposer::new(client);
+
+            // Too few parts
+            let result = composer.delete_post("at://did:plc:abc123/app.bsky.feed.post").await;
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), PostError::InvalidUri(_)));
+
+            // Too many parts
+            let result = composer
+                .delete_post("at://did:plc:abc123/app.bsky.feed.post/xyz789/extra")
+                .await;
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), PostError::InvalidUri(_)));
+        });
+    }
+
+    #[test]
+    fn test_delete_post_invalid_collection() {
+        // Test URI validation - wrong collection type
+        use tokio::runtime::Runtime;
+
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = XrpcClient::new(Default::default());
+            let composer = PostComposer::new(client);
+
+            let result = composer
+                .delete_post("at://did:plc:abc123/app.bsky.feed.like/xyz789")
+                .await;
+
+            assert!(result.is_err());
+            match result.unwrap_err() {
+                PostError::InvalidUri(msg) => {
+                    assert!(msg.contains("app.bsky.feed.post"));
+                    assert!(msg.contains("app.bsky.feed.like"));
+                }
+                _ => panic!("Expected InvalidUri error"),
+            }
+        });
+    }
+
+    #[test]
+    fn test_delete_post_valid_uri_format() {
+        // Test that a valid URI format passes initial validation
+        // Note: This will fail with network error since we don't have a real server,
+        // but it should pass URI validation
+        use tokio::runtime::Runtime;
+
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = XrpcClient::new(Default::default());
+            let composer = PostComposer::new(client);
+
+            let result = composer
+                .delete_post("at://did:plc:abc123/app.bsky.feed.post/xyz789")
+                .await;
+
+            // Should get an XRPC error (network/auth), not URI validation error
+            assert!(result.is_err());
+            match result.unwrap_err() {
+                PostError::Xrpc(_) => {
+                    // This is expected - URI validation passed, network request failed
+                }
+                PostError::InvalidUri(_) => {
+                    panic!("URI validation should have passed");
+                }
+                PostError::NoSession => {
+                    // This is also acceptable - means URI validation passed
+                }
+                _ => {
+                    // Other errors are also OK - URI validation passed
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn test_delete_post_error_display() {
+        // Test error message formatting for delete-related errors
+        let err = PostError::NotFound("at://did:plc:test/app.bsky.feed.post/123".to_string());
+        assert_eq!(
+            err.to_string(),
+            "Post not found: at://did:plc:test/app.bsky.feed.post/123"
+        );
+
+        let err = PostError::NotAuthorized;
+        assert_eq!(err.to_string(), "Not authorized to delete this post");
+
+        let err = PostError::InvalidUri("bad-uri".to_string());
+        assert_eq!(err.to_string(), "Invalid post URI: bad-uri");
+    }
+
+    #[test]
+    fn test_post_error_types() {
+        // Test that error types can be matched
+        let err = PostError::NotFound("test".to_string());
+        assert!(matches!(err, PostError::NotFound(_)));
+
+        let err = PostError::NotAuthorized;
+        assert!(matches!(err, PostError::NotAuthorized));
+
+        let err = PostError::InvalidUri("test".to_string());
+        assert!(matches!(err, PostError::InvalidUri(_)));
+    }
+
+    #[test]
+    fn test_delete_post_uri_parsing() {
+        // Test that URI components are correctly extracted
+        use tokio::runtime::Runtime;
+
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = XrpcClient::new(Default::default());
+            let composer = PostComposer::new(client);
+
+            // Valid URI with all components
+            let uri = "at://did:plc:abc123xyz/app.bsky.feed.post/3k2k3k4k5k6k7k8k";
+            let result = composer.delete_post(uri).await;
+
+            // Should fail with network error, not URI parsing error
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(!matches!(err, PostError::InvalidUri(_)));
+        });
+    }
+
+    #[test]
+    fn test_delete_post_empty_components() {
+        // Test URI with empty components
+        use tokio::runtime::Runtime;
+
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = XrpcClient::new(Default::default());
+            let composer = PostComposer::new(client);
+
+            let result = composer.delete_post("at:////").await;
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), PostError::InvalidUri(_)));
+        });
     }
 }
