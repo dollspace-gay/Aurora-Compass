@@ -742,6 +742,38 @@ impl BskyAgent {
         Ok(upload_response.blob)
     }
 
+    /// Call a custom XRPC procedure
+    ///
+    /// Makes an authenticated XRPC procedure call to the PDS. This is useful for calling
+    /// procedures that don't have dedicated methods in the SDK.
+    ///
+    /// # Arguments
+    ///
+    /// * `nsid` - The procedure NSID (e.g., "com.atproto.server.confirmEmail")
+    /// * `params` - JSON parameters for the procedure
+    ///
+    /// # Returns
+    ///
+    /// The response data as a JSON value
+    ///
+    /// # Errors
+    ///
+    /// Returns `AgentError` if the call fails
+    pub async fn call_procedure(
+        &self,
+        nsid: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        use crate::xrpc::XrpcRequest;
+
+        let request = XrpcRequest::procedure(nsid)
+            .json_body(&params)
+            .map_err(|e| AgentError::Service(e.to_string()))?;
+
+        let response = self.write_client.procedure(request).await?;
+        Ok(response.data)
+    }
+
     /// Update auth headers on both clients
     fn update_auth_headers(&mut self, access_token: &str) {
         let auth = format!("Bearer {}", access_token);

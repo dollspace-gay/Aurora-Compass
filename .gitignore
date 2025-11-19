@@ -130,3 +130,5 @@ Cargo.lock
 
 # Original codebase (archived)
 original-bluesky/
+/.beads
+/.claude

@@ -509,6 +509,250 @@ impl AuthService {
         let manager = self.session_manager.read().await;
         manager.get_account_app_view(did)
     }
+
+    /// Request an email authentication token for 2FA
+    ///
+    /// Sends a verification code to the authenticated user's email address.
+    /// This code can be used to complete 2FA challenges or enable 2FA on an account.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the email was sent successfully
+    ///
+    /// # Errors
+    ///
+    /// - `AuthError::NoSession` - No active session
+    /// - `AuthError::Network` - Network error
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::auth::AuthService;
+    /// # async fn example(auth: &AuthService) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Request 2FA code to be sent to email
+    /// auth.request_email_auth_token().await?;
+    /// println!("2FA code sent to your email");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn request_email_auth_token(&self) -> Result<()> {
+        let manager = self.session_manager.read().await;
+        let agent_arc = manager.current_agent().ok_or(AuthError::NoSession)?;
+        let agent = agent_arc.read().await;
+
+        // Use com.atproto.server.requestEmailConfirmation
+        // This sends a verification code to the user's registered email
+        agent
+            .call_procedure("com.atproto.server.requestEmailConfirmation", serde_json::json!({}))
+            .await
+            .map_err(|e| AuthError::Network(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Verify an email authentication token
+    ///
+    /// Confirms the verification code received via email. This is used to complete
+    /// 2FA challenges during login or when enabling 2FA on an account.
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - The verification code received via email (typically 6 digits)
+    /// * `email` - The email address (for validation)
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the token is valid
+    ///
+    /// # Errors
+    ///
+    /// - `AuthError::NoSession` - No active session
+    /// - `AuthError::Invalid2FAToken` - Invalid or expired token
+    /// - `AuthError::Network` - Network error
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::auth::AuthService;
+    /// # async fn example(auth: &AuthService) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Verify the code received via email
+    /// auth.verify_email_auth_token("123456", "alice@example.com").await?;
+    /// println!("Email verification successful");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn verify_email_auth_token(&self, token: &str, email: &str) -> Result<()> {
+        let manager = self.session_manager.read().await;
+        let agent_arc = manager.current_agent().ok_or(AuthError::NoSession)?;
+        let agent = agent_arc.read().await;
+
+        // Use com.atproto.server.confirmEmail
+        let result = agent
+            .call_procedure(
+                "com.atproto.server.confirmEmail",
+                serde_json::json!({
+                    "email": email,
+                    "token": token,
+                }),
+            )
+            .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) if e.to_string().contains("InvalidToken") => {
+                Err(AuthError::Invalid2FAToken)
+            }
+            Err(e) => Err(AuthError::Network(e.to_string())),
+        }
+    }
+
+    /// Enable email-based two-factor authentication
+    ///
+    /// Enables 2FA for the current account. After enabling, the account will require
+    /// an email verification code for all future logins.
+    ///
+    /// # Process
+    ///
+    /// 1. Call [`request_email_auth_token()`](Self::request_email_auth_token) to send code
+    /// 2. Receive code via email
+    /// 3. Call [`verify_email_auth_token()`](Self::verify_email_auth_token) to confirm
+    /// 4. Call this method to enable 2FA
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - The verified email token
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if 2FA was enabled successfully
+    ///
+    /// # Errors
+    ///
+    /// - `AuthError::NoSession` - No active session
+    /// - `AuthError::Invalid2FAToken` - Invalid or expired token
+    /// - `AuthError::Network` - Network error
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::auth::AuthService;
+    /// # async fn example(auth: &AuthService) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Step 1: Request code
+    /// auth.request_email_auth_token().await?;
+    ///
+    /// // Step 2: User receives code via email (e.g., "123456")
+    ///
+    /// // Step 3: Verify and enable 2FA
+    /// auth.verify_email_auth_token("123456", "alice@example.com").await?;
+    /// auth.enable_email_2fa("123456").await?;
+    /// println!("2FA enabled successfully");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn enable_email_2fa(&self, token: &str) -> Result<()> {
+        let manager = self.session_manager.read().await;
+        let agent_arc = manager.current_agent().ok_or(AuthError::NoSession)?;
+        let agent = agent_arc.read().await;
+
+        // Use com.atproto.server.updateEmail with 2FA enabled
+        let result = agent
+            .call_procedure(
+                "com.atproto.server.updateEmail",
+                serde_json::json!({
+                    "token": token,
+                    "emailAuthFactor": true,
+                }),
+            )
+            .await;
+
+        match result {
+            Ok(_) => {
+                // Note: The account state will be updated on next session refresh
+                // or when the account is re-loaded from the server
+                Ok(())
+            }
+            Err(e) if e.to_string().contains("InvalidToken") => {
+                Err(AuthError::Invalid2FAToken)
+            }
+            Err(e) => Err(AuthError::Network(e.to_string())),
+        }
+    }
+
+    /// Disable email-based two-factor authentication
+    ///
+    /// Disables 2FA for the current account. After disabling, the account will only
+    /// require password for login.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if 2FA was disabled successfully
+    ///
+    /// # Errors
+    ///
+    /// - `AuthError::NoSession` - No active session
+    /// - `AuthError::Network` - Network error
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::auth::AuthService;
+    /// # async fn example(auth: &AuthService) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Disable 2FA
+    /// auth.disable_email_2fa().await?;
+    /// println!("2FA disabled successfully");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn disable_email_2fa(&self) -> Result<()> {
+        let manager = self.session_manager.read().await;
+        let agent_arc = manager.current_agent().ok_or(AuthError::NoSession)?;
+        let agent = agent_arc.read().await;
+
+        // Use com.atproto.server.updateEmail with 2FA disabled
+        let result = agent
+            .call_procedure(
+                "com.atproto.server.updateEmail",
+                serde_json::json!({
+                    "emailAuthFactor": false,
+                }),
+            )
+            .await;
+
+        match result {
+            Ok(_) => {
+                // Note: The account state will be updated on next session refresh
+                // or when the account is re-loaded from the server
+                Ok(())
+            }
+            Err(e) => Err(AuthError::Network(e.to_string())),
+        }
+    }
+
+    /// Check if 2FA is enabled for the current account
+    ///
+    /// # Returns
+    ///
+    /// `true` if 2FA is enabled, `false` otherwise or if no session
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::auth::AuthService;
+    /// # async fn example(auth: &AuthService) {
+    /// if auth.is_2fa_enabled().await {
+    ///     println!("2FA is enabled");
+    /// } else {
+    ///     println!("2FA is disabled");
+    /// }
+    /// # }
+    /// ```
+    pub async fn is_2fa_enabled(&self) -> bool {
+        let manager = self.session_manager.read().await;
+        if let Some(account) = manager.current_account() {
+            return account.email_auth_factor.unwrap_or(false);
+        }
+        false
+    }
 }
 
 #[cfg(test)]
@@ -761,5 +1005,143 @@ mod tests {
 
         let err = AuthError::Config("missing key".to_string());
         assert_eq!(err.to_string(), "Configuration error: missing key");
+    }
+
+    // 2FA Tests
+
+    #[tokio::test]
+    async fn test_request_email_auth_token_no_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let result = auth.request_email_auth_token().await;
+
+        assert!(result.is_err(), "Should fail when no session");
+        assert!(
+            matches!(result.unwrap_err(), AuthError::NoSession),
+            "Should return NoSession error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_verify_email_auth_token_no_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let result = auth.verify_email_auth_token("123456", "test@example.com").await;
+
+        assert!(result.is_err(), "Should fail when no session");
+        assert!(
+            matches!(result.unwrap_err(), AuthError::NoSession),
+            "Should return NoSession error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_enable_email_2fa_no_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let result = auth.enable_email_2fa("123456").await;
+
+        assert!(result.is_err(), "Should fail when no session");
+        assert!(
+            matches!(result.unwrap_err(), AuthError::NoSession),
+            "Should return NoSession error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_disable_email_2fa_no_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let result = auth.disable_email_2fa().await;
+
+        assert!(result.is_err(), "Should fail when no session");
+        assert!(
+            matches!(result.unwrap_err(), AuthError::NoSession),
+            "Should return NoSession error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_is_2fa_enabled_no_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+        let is_enabled = auth.is_2fa_enabled().await;
+
+        assert!(!is_enabled, "Should return false when no session");
+    }
+
+    #[tokio::test]
+    async fn test_2fa_error_types() {
+        // Test that 2FA error types are properly defined and can be matched
+        let err = AuthError::TwoFactorRequired;
+        assert!(matches!(err, AuthError::TwoFactorRequired));
+        assert_eq!(err.to_string(), "Two-factor authentication required");
+
+        let err = AuthError::Invalid2FAToken;
+        assert!(matches!(err, AuthError::Invalid2FAToken));
+        assert_eq!(err.to_string(), "Invalid two-factor authentication token");
+    }
+
+    #[tokio::test]
+    async fn test_login_params_with_2fa_token() {
+        let params = LoginParams {
+            identifier: "alice.bsky.social".to_string(),
+            password: "password123".to_string(),
+            auth_factor_token: Some("123456".to_string()),
+            service: None,
+        };
+
+        assert_eq!(params.auth_factor_token, Some("123456".to_string()));
+
+        // Test serialization
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("123456"));
+
+        let deserialized: LoginParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.auth_factor_token, Some("123456".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_login_result_2fa_flag() {
+        let result = LoginResult {
+            did: "did:plc:abc123".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            email: Some("alice@example.com".to_string()),
+            email_confirmed: true,
+            two_factor_enabled: true,
+        };
+
+        assert!(result.two_factor_enabled, "2FA should be enabled");
+
+        // Test serialization
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: LoginResult = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.two_factor_enabled, "2FA flag should survive serialization");
+    }
+
+    #[tokio::test]
+    async fn test_custom_app_view_url_no_account() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+
+        let auth = AuthService::new(session_path).await.unwrap();
+
+        // Setting app view URL for non-existent account should fail
+        let result = auth.set_app_view_url("did:plc:nonexistent", Some("https://custom.app".to_string())).await;
+        assert!(result.is_err(), "Should fail for non-existent account");
+
+        // Getting app view URL for non-existent account returns None
+        let url = auth.get_app_view_url("did:plc:nonexistent").await;
+        assert!(url.is_none(), "Should return None for non-existent account");
     }
 }
