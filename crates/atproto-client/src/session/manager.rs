@@ -437,7 +437,15 @@ impl SessionManager {
 
         // Create new agent for the account
         let service = account.pds_url.as_ref().unwrap_or(&account.service);
-        let mut agent = BskyAgent::new(service)?;
+
+        // Configure agent with custom AppView if specified
+        let mut agent = if let Some(ref app_view) = account.app_view_url {
+            let config = crate::agent::BskyAgentConfig::new(service)
+                .with_app_view(app_view);
+            BskyAgent::with_config(config)?
+        } else {
+            BskyAgent::new(service)?
+        };
 
         // Setup session callback to update stored tokens
         let did_clone = did.to_string();
@@ -804,6 +812,106 @@ impl SessionManager {
     {
         self.callbacks.push(Arc::new(callback));
     }
+
+    /// Set custom AppView URL for an account
+    ///
+    /// This allows users to configure which AppView provider to use for read operations.
+    /// This is a key differentiator from the official Bluesky client which only uses bsky.social.
+    ///
+    /// # Arguments
+    ///
+    /// * `did` - The DID of the account to configure
+    /// * `app_view_url` - The custom AppView URL, or None to use the service URL
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use atproto_client::session::SessionManager;
+    /// # async fn example(manager: &mut SessionManager) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Set custom AppView
+    /// manager.set_account_app_view("did:plc:abc123", Some("https://api.bsky.app".to_string())).await?;
+    ///
+    /// // Clear custom AppView (use service URL)
+    /// manager.set_account_app_view("did:plc:abc123", None).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn set_account_app_view(
+        &mut self,
+        did: &str,
+        app_view_url: Option<String>,
+    ) -> Result<()> {
+        // Check if account exists
+        if self.get_account(did).is_none() {
+            return Err(SessionManagerError::AccountNotFound(did.to_string()));
+        }
+
+        // Check if this is the current account
+        let is_current_account = self.current_did.as_ref() == Some(&did.to_string());
+
+        // Update the AppView URL
+        let account = self.get_account_mut(did).unwrap();
+        account.app_view_url = app_view_url.clone();
+
+        // If this is the current account, recreate the agent with new AppView
+        if is_current_account {
+            // Get account data before disposing agent
+            let account_data = self.get_account(did).unwrap().clone();
+
+            // Dispose current agent
+            self.dispose_current_agent();
+
+            // Recreate agent with new configuration if account has tokens
+            if account_data.has_tokens() {
+                let service = account_data.pds_url.as_ref().unwrap_or(&account_data.service);
+
+                let mut agent = if let Some(ref app_view) = account_data.app_view_url {
+                    let config = crate::agent::BskyAgentConfig::new(service)
+                        .with_app_view(app_view);
+                    BskyAgent::with_config(config)?
+                } else {
+                    BskyAgent::new(service)?
+                };
+
+                // Resume session
+                let session_data = account_data.to_session_data()?;
+                agent.resume_session(session_data).await?;
+
+                self.current_agent = Some(Arc::new(RwLock::new(agent)));
+            }
+        }
+
+        // Persist changes
+        self.persist().await
+    }
+
+    /// Get the custom AppView URL for an account
+    ///
+    /// # Arguments
+    ///
+    /// * `did` - The DID of the account
+    ///
+    /// # Returns
+    ///
+    /// Returns the custom AppView URL if set, None otherwise
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use atproto_client::session::SessionManager;
+    /// # async fn example(manager: &SessionManager) {
+    /// if let Some(account) = manager.get_account("did:plc:abc123") {
+    ///     match manager.get_account_app_view("did:plc:abc123") {
+    ///         Some(url) => println!("Using custom AppView: {}", url),
+    ///         None => println!("Using default AppView (service URL)"),
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn get_account_app_view(&self, did: &str) -> Option<String> {
+        self.get_account(did)
+            .and_then(|account| account.app_view_url.clone())
+    }
 }
 
 #[cfg(test)]
@@ -1041,5 +1149,130 @@ mod tests {
 
         assert_eq!(deserialized.accounts.len(), 2);
         assert_eq!(deserialized.current_account_did, Some("did:plc:abc123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_set_account_app_view() {
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        let mut account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:abc123".to_string(),
+            "alice.bsky.social".to_string(),
+        );
+        account.access_jwt = Some("access_token".to_string());
+        account.refresh_jwt = Some("refresh_token".to_string());
+
+        manager.add_account(account).await.unwrap();
+
+        // Set custom AppView
+        manager
+            .set_account_app_view("did:plc:abc123", Some("https://api.bsky.app".to_string()))
+            .await
+            .unwrap();
+
+        // Verify it was set
+        let app_view = manager.get_account_app_view("did:plc:abc123");
+        assert_eq!(app_view, Some("https://api.bsky.app".to_string()));
+
+        // Verify it's persisted
+        let account = manager.get_account("did:plc:abc123").unwrap();
+        assert_eq!(
+            account.app_view_url,
+            Some("https://api.bsky.app".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_clear_account_app_view() {
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        let mut account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:abc123".to_string(),
+            "alice.bsky.social".to_string(),
+        );
+        account.access_jwt = Some("access_token".to_string());
+        account.refresh_jwt = Some("refresh_token".to_string());
+        account.app_view_url = Some("https://api.bsky.app".to_string());
+
+        manager.add_account(account).await.unwrap();
+
+        // Clear custom AppView
+        manager
+            .set_account_app_view("did:plc:abc123", None)
+            .await
+            .unwrap();
+
+        // Verify it was cleared
+        let app_view = manager.get_account_app_view("did:plc:abc123");
+        assert_eq!(app_view, None);
+    }
+
+    #[tokio::test]
+    async fn test_set_app_view_nonexistent_account() {
+        let mut manager = SessionManager::new_in_memory().await.unwrap();
+
+        let result = manager
+            .set_account_app_view(
+                "did:plc:nonexistent",
+                Some("https://api.bsky.app".to_string()),
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SessionManagerError::AccountNotFound(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_get_app_view_nonexistent_account() {
+        let manager = SessionManager::new_in_memory().await.unwrap();
+
+        let app_view = manager.get_account_app_view("did:plc:nonexistent");
+        assert_eq!(app_view, None);
+    }
+
+    #[tokio::test]
+    async fn test_app_view_persistence() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("test_app_view_sessions.json");
+
+        // First instance - set AppView
+        {
+            let mut manager = SessionManager::new(&path).await.unwrap();
+
+            let mut account = SessionAccount::new(
+                "https://bsky.social".to_string(),
+                "did:plc:abc123".to_string(),
+                "alice.bsky.social".to_string(),
+            );
+            account.access_jwt = Some("access_token".to_string());
+            account.refresh_jwt = Some("refresh_token".to_string());
+
+            manager.add_account(account).await.unwrap();
+            manager
+                .set_account_app_view("did:plc:abc123", Some("https://custom.appview".to_string()))
+                .await
+                .unwrap();
+        }
+
+        // Second instance - verify AppView persisted
+        {
+            let manager = SessionManager::new(&path).await.unwrap();
+
+            let app_view = manager.get_account_app_view("did:plc:abc123");
+            assert_eq!(app_view, Some("https://custom.appview".to_string()));
+
+            let account = manager.get_account("did:plc:abc123").unwrap();
+            assert_eq!(
+                account.app_view_url,
+                Some("https://custom.appview".to_string())
+            );
+        }
     }
 }

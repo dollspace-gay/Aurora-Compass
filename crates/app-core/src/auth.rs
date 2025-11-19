@@ -450,6 +450,65 @@ impl AuthService {
         }
         Ok(())
     }
+
+    /// Set custom AppView URL for an account
+    ///
+    /// This allows users to configure which AppView provider to use for read operations.
+    /// This is a key differentiator from the official Bluesky client which only uses bsky.social.
+    ///
+    /// # Arguments
+    ///
+    /// * `did` - The DID of the account to configure
+    /// * `app_view_url` - The custom AppView URL, or None to use the service URL
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::auth::AuthService;
+    /// # async fn example(auth: &AuthService) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Set custom AppView for an account
+    /// auth.set_app_view_url("did:plc:abc123", Some("https://api.bsky.app".to_string())).await?;
+    ///
+    /// // Clear custom AppView (revert to service URL)
+    /// auth.set_app_view_url("did:plc:abc123", None).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn set_app_view_url(
+        &self,
+        did: &str,
+        app_view_url: Option<String>,
+    ) -> Result<()> {
+        let mut manager = self.session_manager.write().await;
+        manager.set_account_app_view(did, app_view_url).await?;
+        Ok(())
+    }
+
+    /// Get the custom AppView URL for an account
+    ///
+    /// # Arguments
+    ///
+    /// * `did` - The DID of the account
+    ///
+    /// # Returns
+    ///
+    /// Returns the custom AppView URL if set, None if using the default (service URL)
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::auth::AuthService;
+    /// # async fn example(auth: &AuthService) {
+    /// match auth.get_app_view_url("did:plc:abc123").await {
+    ///     Some(url) => println!("Using custom AppView: {}", url),
+    ///     None => println!("Using default AppView (service URL)"),
+    /// }
+    /// # }
+    /// ```
+    pub async fn get_app_view_url(&self, did: &str) -> Option<String> {
+        let manager = self.session_manager.read().await;
+        manager.get_account_app_view(did)
+    }
 }
 
 #[cfg(test)]

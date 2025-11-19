@@ -27,6 +27,7 @@
 //!     status: None,
 //!     pds_url: None,
 //!     is_self_hosted: Some(false),
+//!     app_view_url: Some("https://api.bsky.app".to_string()),
 //! };
 //!
 //! // Check if session is expired
@@ -125,6 +126,11 @@ pub struct SessionAccount {
     /// Whether this is a self-hosted PDS
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_self_hosted: Option<bool>,
+
+    /// Custom AppView URL for read operations (if different from service)
+    /// This is a key differentiator allowing users to choose their AppView provider
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_view_url: Option<String>,
 }
 
 impl SessionAccount {
@@ -144,6 +150,7 @@ impl SessionAccount {
             status: None,
             pds_url: None,
             is_self_hosted: None,
+            app_view_url: None,
         }
     }
 
@@ -229,6 +236,7 @@ impl AtpSessionData {
             status: self.status.clone(),
             pds_url: None,
             is_self_hosted: None,
+            app_view_url: None,
         }
     }
 }
@@ -544,6 +552,7 @@ mod tests {
             status: None,
             pds_url: None,
             is_self_hosted: Some(false),
+            app_view_url: None,
         };
 
         let json = serde_json::to_string(&account).unwrap();
@@ -935,5 +944,75 @@ mod tests {
         assert_eq!(account.email, round_trip_account.email);
         assert_eq!(account.access_jwt, round_trip_account.access_jwt);
         assert_eq!(account.refresh_jwt, round_trip_account.refresh_jwt);
+    }
+
+    #[test]
+    fn test_session_account_with_app_view_url() {
+        let mut account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:abc123".to_string(),
+            "alice.bsky.social".to_string(),
+        );
+
+        // Initially no AppView URL
+        assert_eq!(account.app_view_url, None);
+
+        // Set custom AppView URL
+        account.app_view_url = Some("https://api.bsky.app".to_string());
+        assert_eq!(
+            account.app_view_url,
+            Some("https://api.bsky.app".to_string())
+        );
+    }
+
+    #[test]
+    fn test_session_account_serialization_with_app_view() {
+        let mut account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:abc123".to_string(),
+            "alice.bsky.social".to_string(),
+        );
+        account.app_view_url = Some("https://custom.appview.social".to_string());
+        account.access_jwt = Some("access_token".to_string());
+        account.refresh_jwt = Some("refresh_token".to_string());
+
+        // Serialize
+        let json = serde_json::to_string(&account).unwrap();
+
+        // Verify app_view_url is in JSON
+        assert!(json.contains("custom.appview.social"));
+        assert!(json.contains("appViewUrl"));
+
+        // Deserialize
+        let deserialized: SessionAccount = serde_json::from_str(&json).unwrap();
+
+        // Verify fields match
+        assert_eq!(
+            deserialized.app_view_url,
+            Some("https://custom.appview.social".to_string())
+        );
+        assert_eq!(account, deserialized);
+    }
+
+    #[test]
+    fn test_session_account_serialization_without_app_view() {
+        let account = SessionAccount::new(
+            "https://bsky.social".to_string(),
+            "did:plc:abc123".to_string(),
+            "alice.bsky.social".to_string(),
+        );
+
+        // Serialize
+        let json = serde_json::to_string(&account).unwrap();
+
+        // Verify appViewUrl is NOT in JSON when None (skip_serializing_if)
+        assert!(!json.contains("appViewUrl"));
+
+        // Deserialize
+        let deserialized: SessionAccount = serde_json::from_str(&json).unwrap();
+
+        // Verify fields match
+        assert_eq!(deserialized.app_view_url, None);
+        assert_eq!(account, deserialized);
     }
 }
