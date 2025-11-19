@@ -1419,6 +1419,271 @@ impl HashtagFeed {
     }
 }
 
+// ============================================================================
+// List Feed System
+// ============================================================================
+
+/// List feed parameters
+///
+/// Parameters for fetching posts from a list of users.
+#[derive(Debug, Clone)]
+pub struct ListFeedParams {
+    /// AT URI of the list (e.g., "at://did:plc:abc/app.bsky.graph.list/123")
+    pub list: String,
+
+    /// Pagination cursor
+    pub cursor: Option<String>,
+
+    /// Number of items to fetch (default 50, max 100)
+    pub limit: u32,
+}
+
+impl ListFeedParams {
+    /// Create new list feed parameters
+    ///
+    /// # Arguments
+    ///
+    /// * `list` - AT URI of the list
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::ListFeedParams;
+    /// let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/123");
+    /// assert_eq!(params.limit, 50);
+    /// ```
+    pub fn new(list: impl Into<String>) -> Self {
+        Self {
+            list: list.into(),
+            cursor: None,
+            limit: 50,
+        }
+    }
+
+    /// Set the pagination cursor
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::ListFeedParams;
+    /// let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/123")
+    ///     .with_cursor(Some("cursor123".to_string()));
+    /// ```
+    pub fn with_cursor(mut self, cursor: Option<String>) -> Self {
+        self.cursor = cursor;
+        self
+    }
+
+    /// Set the limit
+    ///
+    /// The limit is capped at 100.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::ListFeedParams;
+    /// let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/123")
+    ///     .with_limit(25);
+    /// assert_eq!(params.limit, 25);
+    /// ```
+    pub fn with_limit(mut self, limit: u32) -> Self {
+        self.limit = limit.min(100);
+        self
+    }
+}
+
+/// List feed service
+///
+/// Fetches posts from members of a list.
+///
+/// # Example
+///
+/// ```no_run
+/// # use app_core::feeds::{ListFeed, ListFeedParams};
+/// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+/// # use std::sync::Arc;
+/// # use tokio::sync::RwLock;
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// # let config = XrpcClientConfig::default();
+/// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+/// let feed = ListFeed::new(client);
+/// let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech");
+/// let response = feed.fetch(params).await?;
+/// println!("Got {} posts from list", response.feed.len());
+/// # Ok(())
+/// # }
+/// ```
+pub struct ListFeed {
+    client: Arc<RwLock<XrpcClient>>,
+}
+
+impl ListFeed {
+    /// Create a new list feed service
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::feeds::ListFeed;
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let feed = ListFeed::new(client);
+    /// ```
+    pub fn new(client: Arc<RwLock<XrpcClient>>) -> Self {
+        Self { client }
+    }
+
+    /// Fetch posts from a list
+    ///
+    /// Returns posts from members of the specified list in reverse chronological order.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - List feed parameters including list URI, cursor, and limit
+    ///
+    /// # Errors
+    ///
+    /// Returns `FeedError::ApiError` if the API request fails.
+    /// Returns `FeedError::ParseError` if the response cannot be parsed.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::feeds::{ListFeed, ListFeedParams};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let feed = ListFeed::new(client);
+    /// let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+    ///     .with_limit(25);
+    /// let response = feed.fetch(params).await?;
+    ///
+    /// for post in response.feed {
+    ///     println!("Post: {}", post.post.uri);
+    /// }
+    ///
+    /// // Fetch next page if available
+    /// if let Some(cursor) = response.cursor {
+    ///     let next_params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+    ///         .with_cursor(Some(cursor))
+    ///         .with_limit(25);
+    ///     let next_response = feed.fetch(next_params).await?;
+    ///     println!("Got {} more posts", next_response.feed.len());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn fetch(&self, params: ListFeedParams) -> Result<FeedResponse> {
+        let client = self.client.read().await;
+
+        let mut request = atproto_client::XrpcRequest::query("app.bsky.feed.getListFeed")
+            .param("list", params.list)
+            .param("limit", params.limit.to_string());
+
+        if let Some(cursor) = params.cursor {
+            request = request.param("cursor", cursor);
+        }
+
+        let response = client
+            .query(request)
+            .await
+            .map_err(|e| FeedError::ApiError(e.to_string()))?;
+
+        let feed_response: FeedResponse =
+            serde_json::from_value(response.data).map_err(FeedError::ParseError)?;
+
+        Ok(feed_response)
+    }
+
+    /// Peek at the latest post from a list without affecting pagination
+    ///
+    /// This is useful for checking if there are new posts available
+    /// without consuming them from the feed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FeedError::ApiError` if the API request fails.
+    /// Returns `FeedError::ParseError` if the response cannot be parsed.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::feeds::{ListFeed, ListFeedParams};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let feed = ListFeed::new(client);
+    /// let list_uri = "at://did:plc:abc/app.bsky.graph.list/tech";
+    ///
+    /// if let Some(latest) = feed.peek_latest(list_uri).await? {
+    ///     println!("Latest post from list: {}", latest.post.uri);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn peek_latest(&self, list_uri: impl Into<String>) -> Result<Option<FeedViewPost>> {
+        let params = ListFeedParams {
+            list: list_uri.into(),
+            cursor: None,
+            limit: 1,
+        };
+
+        let response = self.fetch(params).await?;
+        Ok(response.feed.into_iter().next())
+    }
+
+    /// Check if a list has new posts since a given indexed time
+    ///
+    /// # Arguments
+    ///
+    /// * `list_uri` - AT URI of the list
+    /// * `since` - ISO 8601 timestamp to check against
+    ///
+    /// # Errors
+    ///
+    /// Returns `FeedError::ApiError` if the API request fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use app_core::feeds::{ListFeed, ListFeedParams};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::default();
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
+    /// let feed = ListFeed::new(client);
+    /// let list_uri = "at://did:plc:abc/app.bsky.graph.list/tech";
+    /// let last_check = "2024-01-01T00:00:00Z";
+    ///
+    /// if feed.has_new_posts(list_uri, last_check).await? {
+    ///     println!("New posts available in list!");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn has_new_posts(
+        &self,
+        list_uri: impl Into<String>,
+        since: &str,
+    ) -> Result<bool> {
+        if let Some(latest) = self.peek_latest(list_uri).await? {
+            Ok(latest.post.indexed_at.as_str() > since)
+        } else {
+            Ok(false)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1936,6 +2201,110 @@ mod tests {
             feed_context: None,
         };
         assert!(!prefs.should_show_post(&repost));
+    }
+
+    // List Feed Tests
+
+    #[test]
+    fn test_list_feed_params_new() {
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech");
+        assert_eq!(params.list, "at://did:plc:abc/app.bsky.graph.list/tech");
+        assert!(params.cursor.is_none());
+        assert_eq!(params.limit, 50);
+    }
+
+    #[test]
+    fn test_list_feed_params_with_cursor() {
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+            .with_cursor(Some("cursor123".to_string()));
+        assert_eq!(params.cursor, Some("cursor123".to_string()));
+    }
+
+    #[test]
+    fn test_list_feed_params_with_limit() {
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+            .with_limit(25);
+        assert_eq!(params.limit, 25);
+    }
+
+    #[test]
+    fn test_list_feed_params_limit_capped() {
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+            .with_limit(150);
+        assert_eq!(params.limit, 100);
+    }
+
+    #[test]
+    fn test_list_feed_params_builder_chain() {
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+            .with_cursor(Some("abc".to_string()))
+            .with_limit(30);
+
+        assert_eq!(params.list, "at://did:plc:abc/app.bsky.graph.list/tech");
+        assert_eq!(params.cursor, Some("abc".to_string()));
+        assert_eq!(params.limit, 30);
+    }
+
+    #[test]
+    fn test_list_feed_params_with_different_uris() {
+        let params1 = ListFeedParams::new("at://did:plc:user1/app.bsky.graph.list/mylist");
+        let params2 = ListFeedParams::new("at://did:plc:user2/app.bsky.graph.list/otherlist");
+
+        assert_eq!(params1.list, "at://did:plc:user1/app.bsky.graph.list/mylist");
+        assert_eq!(params2.list, "at://did:plc:user2/app.bsky.graph.list/otherlist");
+    }
+
+    #[test]
+    fn test_list_feed_params_clone() {
+        let params1 = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+            .with_limit(40);
+        let params2 = params1.clone();
+
+        assert_eq!(params1.list, params2.list);
+        assert_eq!(params1.cursor, params2.cursor);
+        assert_eq!(params1.limit, params2.limit);
+    }
+
+    #[test]
+    fn test_list_feed_params_debug() {
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech");
+        let debug_str = format!("{:?}", params);
+        assert!(debug_str.contains("ListFeedParams"));
+        assert!(debug_str.contains("at://did:plc:abc/app.bsky.graph.list/tech"));
+    }
+
+    #[test]
+    fn test_list_feed_params_cursor_none_to_some() {
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+            .with_cursor(None)
+            .with_cursor(Some("cursor".to_string()));
+        assert_eq!(params.cursor, Some("cursor".to_string()));
+    }
+
+    #[test]
+    fn test_list_feed_params_cursor_some_to_none() {
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+            .with_cursor(Some("cursor".to_string()))
+            .with_cursor(None);
+        assert!(params.cursor.is_none());
+    }
+
+    #[test]
+    fn test_list_feed_params_limits() {
+        // Zero should become zero (edge case)
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+            .with_limit(0);
+        assert_eq!(params.limit, 0);
+
+        // Max allowed
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+            .with_limit(100);
+        assert_eq!(params.limit, 100);
+
+        // Over max should cap at 100
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
+            .with_limit(1000);
+        assert_eq!(params.limit, 100);
     }
 
     #[test]
