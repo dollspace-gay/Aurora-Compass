@@ -12,3 +12,4 @@ pub mod mutation;
 pub mod query;
 pub mod session;
 pub mod sync;
+pub mod unread;

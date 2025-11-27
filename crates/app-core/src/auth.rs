@@ -63,6 +63,14 @@ pub enum AuthError {
     /// Configuration error
     #[error("Configuration error: {0}")]
     Config(String),
+
+    /// Invalid reset code
+    #[error("Invalid reset code format")]
+    InvalidResetCode,
+
+    /// Email validation error
+    #[error("Invalid email address")]
+    InvalidEmail,
 }
 
 /// Result type for authentication operations
@@ -753,6 +761,188 @@ impl AuthService {
         }
         false
     }
+
+    /// Request a password reset email
+    ///
+    /// Sends a password reset code to the specified email address. This does not require
+    /// an active session since it's used by users who have forgotten their password.
+    ///
+    /// # Arguments
+    ///
+    /// * `email` - Email address associated with the account
+    /// * `service_url` - Optional AT Protocol service URL (defaults to bsky.social)
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the reset email was sent successfully
+    ///
+    /// # Errors
+    ///
+    /// - `AuthError::InvalidEmail` - Email format is invalid
+    /// - `AuthError::Network` - Network error
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::auth::AuthService;
+    /// # async fn example(auth: &AuthService) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Request password reset for an account
+    /// auth.request_password_reset("alice@example.com", None).await?;
+    /// println!("Password reset email sent");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn request_password_reset(
+        &self,
+        email: &str,
+        service_url: Option<String>,
+    ) -> Result<()> {
+        // Basic email validation
+        if !email.contains('@') || email.len() < 3 {
+            return Err(AuthError::InvalidEmail);
+        }
+
+        let service = service_url.unwrap_or_else(|| "https://bsky.social".to_string());
+
+        // Create a temporary client for this unauthenticated request
+        let config = atproto_client::xrpc::XrpcClientConfig::new(&service);
+        let client = atproto_client::xrpc::XrpcClient::new(config);
+
+        // Call the requestPasswordReset endpoint
+        let payload = serde_json::json!({
+            "email": email
+        });
+
+        let request = atproto_client::xrpc::XrpcRequest::procedure("com.atproto.server.requestPasswordReset")
+            .json_body(&payload)
+            .map_err(|e| AuthError::Network(e.to_string()))?;
+
+        let _response: atproto_client::xrpc::XrpcResponse<serde_json::Value> = client
+            .procedure(request)
+            .await
+            .map_err(|e| AuthError::Network(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Reset password using a reset code
+    ///
+    /// Resets the account password using the code received via email. This does not require
+    /// an active session since it's used by users who have forgotten their password.
+    ///
+    /// The reset code should be in the format "XXXXX-XXXXX" (10 base32 characters with a dash).
+    /// If provided without a dash (10 characters), it will be automatically formatted.
+    ///
+    /// # Arguments
+    ///
+    /// * `reset_code` - Reset code from email (format: XXXXX-XXXXX)
+    /// * `new_password` - New password to set
+    /// * `service_url` - Optional AT Protocol service URL (defaults to bsky.social)
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the password was reset successfully
+    ///
+    /// # Errors
+    ///
+    /// - `AuthError::InvalidResetCode` - Reset code format is invalid
+    /// - `AuthError::Network` - Network error (may also indicate expired/invalid code)
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::auth::AuthService;
+    /// # async fn example(auth: &AuthService) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Reset password with code from email
+    /// auth.reset_password("ABCDE-12345", "new_secure_password", None).await?;
+    /// println!("Password reset successful");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn reset_password(
+        &self,
+        reset_code: &str,
+        new_password: &str,
+        service_url: Option<String>,
+    ) -> Result<()> {
+        // Validate and format the reset code
+        let token = Self::validate_and_format_reset_code(reset_code)?;
+
+        let service = service_url.unwrap_or_else(|| "https://bsky.social".to_string());
+
+        // Create a temporary client for this unauthenticated request
+        let config = atproto_client::xrpc::XrpcClientConfig::new(&service);
+        let client = atproto_client::xrpc::XrpcClient::new(config);
+
+        // Call the resetPassword endpoint
+        let payload = serde_json::json!({
+            "token": token,
+            "password": new_password
+        });
+
+        let request = atproto_client::xrpc::XrpcRequest::procedure("com.atproto.server.resetPassword")
+            .json_body(&payload)
+            .map_err(|e| AuthError::Network(e.to_string()))?;
+
+        let _response: atproto_client::xrpc::XrpcResponse<serde_json::Value> = client
+            .procedure(request)
+            .await
+            .map_err(|e| AuthError::Network(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Validate and format a password reset code
+    ///
+    /// Checks that the code is in the correct format (base32, XXXXX-XXXXX) and
+    /// returns it in normalized form.
+    ///
+    /// # Arguments
+    ///
+    /// * `code` - Reset code to validate
+    ///
+    /// # Returns
+    ///
+    /// Formatted reset code in XXXXX-XXXXX format
+    ///
+    /// # Errors
+    ///
+    /// - `AuthError::InvalidResetCode` - Code format is invalid
+    fn validate_and_format_reset_code(code: &str) -> Result<String> {
+        // Trim and uppercase
+        let mut fixed = code.trim().to_uppercase();
+
+        // Add dash if needed (user entered 10 chars without dash)
+        if fixed.len() == 10 && !fixed.contains('-') {
+            fixed = format!("{}-{}", &fixed[0..5], &fixed[5..10]);
+        }
+
+        // Validate format: exactly 11 characters, format XXXXX-XXXXX
+        if fixed.len() != 11 {
+            return Err(AuthError::InvalidResetCode);
+        }
+
+        let parts: Vec<_> = fixed.split('-').collect();
+        if parts.len() != 2 || parts[0].len() != 5 || parts[1].len() != 5 {
+            return Err(AuthError::InvalidResetCode);
+        }
+
+        // Validate base32 characters (A-Z, 2-7)
+        for ch in fixed.chars() {
+            if ch == '-' {
+                continue;
+            }
+            if !ch.is_ascii_uppercase() && !('2'..='7').contains(&ch) {
+                return Err(AuthError::InvalidResetCode);
+            }
+            // Reject invalid base32 chars (0, 1, 8, 9)
+            if matches!(ch, '0' | '1' | '8' | '9') {
+                return Err(AuthError::InvalidResetCode);
+            }
+        }
+
+        Ok(fixed)
+    }
 }
 
 #[cfg(test)]
@@ -1143,5 +1333,216 @@ mod tests {
         // Getting app view URL for non-existent account returns None
         let url = auth.get_app_view_url("did:plc:nonexistent").await;
         assert!(url.is_none(), "Should return None for non-existent account");
+    }
+
+    // Password Reset Tests
+
+    #[test]
+    fn test_validate_reset_code_valid() {
+        let code = "ABCDE-FGH23";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ABCDE-FGH23");
+    }
+
+    #[test]
+    fn test_validate_reset_code_without_dash() {
+        let code = "ABCDEFGH23";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ABCDE-FGH23");
+    }
+
+    #[test]
+    fn test_validate_reset_code_lowercase() {
+        let code = "abcde-fgh23";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ABCDE-FGH23");
+    }
+
+    #[test]
+    fn test_validate_reset_code_with_whitespace() {
+        let code = "  ABCDE-FGH23  ";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ABCDE-FGH23");
+    }
+
+    #[test]
+    fn test_validate_reset_code_too_short() {
+        let code = "ABCD-FGH23";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::InvalidResetCode));
+    }
+
+    #[test]
+    fn test_validate_reset_code_too_long() {
+        let code = "ABCDEF-FGH23";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::InvalidResetCode));
+    }
+
+    #[test]
+    fn test_validate_reset_code_invalid_chars() {
+        // Contains invalid base32 character '1'
+        let code = "ABCDE-1GH23";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::InvalidResetCode));
+
+        // Contains invalid base32 character '0'
+        let code2 = "ABCDE-0GH23";
+        let result2 = AuthService::validate_and_format_reset_code(code2);
+        assert!(result2.is_err());
+
+        // Contains invalid base32 character '8'
+        let code3 = "ABCDE-8GH23";
+        let result3 = AuthService::validate_and_format_reset_code(code3);
+        assert!(result3.is_err());
+    }
+
+    #[test]
+    fn test_validate_reset_code_lowercase_chars() {
+        // Lowercase should be uppercased
+        let code = "abcde-fgh23";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ABCDE-FGH23");
+    }
+
+    #[test]
+    fn test_validate_reset_code_special_chars() {
+        let code = "ABCDE-FGH2$";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::InvalidResetCode));
+    }
+
+    #[test]
+    fn test_validate_reset_code_valid_base32_chars() {
+        // All valid base32 chars: A-Z, 2-7
+        let code = "ABCDE-23456";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_ok());
+
+        let code2 = "ZYXWV-76543";
+        let result2 = AuthService::validate_and_format_reset_code(code2);
+        assert!(result2.is_ok());
+    }
+
+    #[test]
+    fn test_validate_reset_code_empty() {
+        let code = "";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::InvalidResetCode));
+    }
+
+    #[test]
+    fn test_validate_reset_code_wrong_dash_position() {
+        let code = "ABC-DEFGH23";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::InvalidResetCode));
+    }
+
+    #[test]
+    fn test_validate_reset_code_multiple_dashes() {
+        let code = "ABC-DE-FGH23";
+        let result = AuthService::validate_and_format_reset_code(code);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::InvalidResetCode));
+    }
+
+    #[tokio::test]
+    async fn test_request_password_reset_invalid_email() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_path = temp_dir.path().join("sessions.json");
+        let auth = AuthService::new(session_path).await.unwrap();
+
+        // Email without @
+        let result = auth.request_password_reset("invalidemail", None).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::InvalidEmail));
+
+        // Too short
+        let result2 = auth.request_password_reset("a@", None).await;
+        assert!(result2.is_err());
+        assert!(matches!(result2.unwrap_err(), AuthError::InvalidEmail));
+    }
+
+    #[test]
+    fn test_auth_error_display_password_reset() {
+        let err = AuthError::InvalidResetCode;
+        assert_eq!(err.to_string(), "Invalid reset code format");
+
+        let err = AuthError::InvalidEmail;
+        assert_eq!(err.to_string(), "Invalid email address");
+    }
+
+    #[test]
+    fn test_validate_reset_code_case_insensitive() {
+        let codes = vec![
+            ("ABCDE-FGH23", "ABCDE-FGH23"),
+            ("abcde-fgh23", "ABCDE-FGH23"),
+            ("AbCdE-FgH23", "ABCDE-FGH23"),
+        ];
+
+        for (input, expected) in codes {
+            let result = AuthService::validate_and_format_reset_code(input);
+            assert!(result.is_ok(), "Failed for input: {}", input);
+            assert_eq!(result.unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn test_validate_reset_code_auto_dash_insertion() {
+        let codes_without_dash = vec![
+            ("ABCDEFGH23", "ABCDE-FGH23"),
+            ("ZYXWV76543", "ZYXWV-76543"),
+            ("AAAAA22222", "AAAAA-22222"),
+        ];
+
+        for (input, expected) in codes_without_dash {
+            let result = AuthService::validate_and_format_reset_code(input);
+            assert!(result.is_ok(), "Failed for input: {}", input);
+            assert_eq!(result.unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn test_validate_reset_code_boundary_valid_chars() {
+        // Test boundary base32 characters
+        // Lowest: 2, Highest: 7 (digits)
+        // Lowest: A, Highest: Z (letters)
+        let code1 = "AAAAA-22222";
+        assert!(AuthService::validate_and_format_reset_code(code1).is_ok());
+
+        let code2 = "ZZZZZ-77777";
+        assert!(AuthService::validate_and_format_reset_code(code2).is_ok());
+
+        let code3 = "ABCDE-23456";
+        assert!(AuthService::validate_and_format_reset_code(code3).is_ok());
+
+        let code4 = "ZYXWV-76543";
+        assert!(AuthService::validate_and_format_reset_code(code4).is_ok());
+    }
+
+    #[test]
+    fn test_validate_reset_code_mixed_valid() {
+        let codes = vec![
+            "A2B3C-4D5E6",
+            "Z7Y6X-5W4V3",
+            "MIXED-27MIX",
+            "23456-ABCDE",
+        ];
+
+        for code in codes {
+            let result = AuthService::validate_and_format_reset_code(code);
+            assert!(result.is_ok(), "Failed for code: {}", code);
+        }
     }
 }

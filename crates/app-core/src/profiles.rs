@@ -307,6 +307,144 @@ impl ProfileUpdateParams {
         self
     }
 }
+// ============================================================================
+// Suggested Follows Types
+// ============================================================================
+
+/// Parameters for suggested follows query
+#[derive(Debug, Clone, Default)]
+pub struct SuggestedFollowsParams {
+    /// Pagination cursor
+    pub cursor: Option<String>,
+    /// Number of results to return (default 25, max 100)
+    pub limit: u32,
+    /// User interests for personalization
+    pub interests: Option<Vec<String>>,
+    /// Preferred language (e.g., "en", "es", "en,es")
+    pub language: Option<String>,
+}
+
+impl SuggestedFollowsParams {
+    /// Create new suggested follows parameters with defaults
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use app_core::profiles::SuggestedFollowsParams;
+    /// let params = SuggestedFollowsParams::new();
+    /// assert_eq!(params.limit, 25);
+    /// ```
+    pub fn new() -> Self {
+        Self {
+            cursor: None,
+            limit: 25,
+            interests: None,
+            language: None,
+        }
+    }
+
+    /// Set the pagination cursor
+    pub fn with_cursor(mut self, cursor: String) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
+    /// Set the result limit (max 100)
+    pub fn with_limit(mut self, limit: u32) -> Self {
+        self.limit = limit.min(100);
+        self
+    }
+
+    /// Set user interests for personalization
+    pub fn with_interests(mut self, interests: Vec<String>) -> Self {
+        self.interests = Some(interests);
+        self
+    }
+
+    /// Set preferred language
+    pub fn with_language(mut self, language: impl Into<String>) -> Self {
+        self.language = Some(language.into());
+        self
+    }
+}
+
+/// Response from suggested follows query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestedFollowsResponse {
+    /// List of suggested profiles
+    pub actors: Vec<ProfileView>,
+    /// Cursor for next page
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+/// Response from suggested follows by actor query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedFollowsByActorResponse {
+    /// List of suggested profiles
+    pub suggestions: Vec<ProfileView>,
+    /// Whether this is a fallback response (no personalized suggestions available)
+    #[serde(default)]
+    pub is_fallback: bool,
+    /// Recommendation ID for tracking
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rec_id: Option<String>,
+}
+
+// ============================================================================
+// Known Followers Types
+// ============================================================================
+
+/// Parameters for known followers query
+#[derive(Debug, Clone, Default)]
+pub struct KnownFollowersParams {
+    /// Pagination cursor
+    pub cursor: Option<String>,
+    /// Number of results to return (default 50, max 100)
+    pub limit: u32,
+}
+
+impl KnownFollowersParams {
+    /// Create new parameters with default values
+    pub fn new() -> Self {
+        Self {
+            cursor: None,
+            limit: 50,
+        }
+    }
+
+    /// Set the pagination cursor
+    pub fn with_cursor(mut self, cursor: String) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
+    /// Set the limit (capped at 100)
+    pub fn with_limit(mut self, limit: u32) -> Self {
+        self.limit = limit.min(100);
+        self
+    }
+}
+
+/// Known followers response from the API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownFollowersResponse {
+    /// DID of the subject profile
+    pub subject: String,
+    /// List of known followers (people you follow who also follow this profile)
+    pub followers: Vec<ProfileView>,
+    /// Total count of known followers (may include blocked users)
+    pub count: u32,
+    /// Pagination cursor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+// ============================================================================
+// Profile Service
+// ============================================================================
 
 /// Profile service for fetching and managing profiles
 ///
@@ -323,7 +461,7 @@ impl ProfileUpdateParams {
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     // Create XRPC client (with auth)
 ///     let config = XrpcClientConfig::new("https://bsky.social");
-///     let client = XrpcClient::new(config);
+///     let client = XrpcClient::new(client);
 ///     let service = ProfileService::new(client);
 ///
 ///     // Fetch a profile
@@ -501,6 +639,179 @@ impl ProfileService {
             serde_json::from_value(response.data).map_err(ProfileError::Serialization)?;
 
         Ok(suggestions_response.actors)
+    }
+
+    /// Get paginated suggestions for profiles to follow with enhanced options
+    ///
+    /// This provides cursor-based pagination and supports user interests/language preferences.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - Suggestion parameters including cursor, limit, interests, and language
+    ///
+    /// # Returns
+    ///
+    /// Paginated list of suggested profiles with cursor for next page
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::profiles::{ProfileService, SuggestedFollowsParams};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::new("https://bsky.social");
+    /// # let client = XrpcClient::new(config);
+    /// # let service = ProfileService::new(client);
+    /// let params = SuggestedFollowsParams::new()
+    ///     .with_limit(25)
+    ///     .with_interests(vec!["tech".to_string(), "programming".to_string()])
+    ///     .with_language("en");
+    ///
+    /// let response = service.get_suggested_follows(params).await?;
+    /// println!("Got {} suggestions", response.actors.len());
+    ///
+    /// // Fetch next page if available
+    /// if let Some(cursor) = response.cursor {
+    ///     let next_params = SuggestedFollowsParams::new()
+    ///         .with_cursor(cursor)
+    ///         .with_limit(25);
+    ///     let next_response = service.get_suggested_follows(next_params).await?;
+    ///     println!("Got {} more suggestions", next_response.actors.len());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_suggested_follows(&self, params: SuggestedFollowsParams) -> Result<SuggestedFollowsResponse> {
+        let mut request = XrpcRequest::query("app.bsky.actor.getSuggestions")
+            .param("limit", params.limit.to_string());
+
+        if let Some(cursor) = params.cursor {
+            request = request.param("cursor", cursor);
+        }
+
+        // Add interests header if provided
+        if let Some(interests) = params.interests {
+            let interests_str = interests.join(",");
+            request = request.header("X-Bsky-Topics", interests_str);
+        }
+
+        // Add language header if provided
+        if let Some(language) = params.language {
+            request = request.header("Accept-Language", language);
+        }
+
+        let client = self.client.read().await;
+        let response = client
+            .query(request)
+            .await
+            .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
+
+        serde_json::from_value(response.data).map_err(ProfileError::Serialization)
+    }
+
+    /// Get suggested follows based on a specific actor
+    ///
+    /// This returns suggestions of accounts that are similar to or followed by
+    /// the specified actor.
+    ///
+    /// # Arguments
+    ///
+    /// * `actor` - DID or handle of the actor to base suggestions on
+    ///
+    /// # Returns
+    ///
+    /// List of suggested profiles with metadata
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use app_core::profiles::ProfileService;
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::new("https://bsky.social");
+    /// # let client = XrpcClient::new(config);
+    /// # let service = ProfileService::new(client);
+    /// let response = service.get_suggested_follows_by_actor("alice.bsky.social").await?;
+    ///
+    /// if !response.is_fallback {
+    ///     println!("Found {} similar accounts", response.suggestions.len());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_suggested_follows_by_actor(&self, actor: &str) -> Result<SuggestedFollowsByActorResponse> {
+        let request = XrpcRequest::query("app.bsky.graph.getSuggestedFollowsByActor")
+            .param("actor", actor.to_string());
+
+        let client = self.client.read().await;
+        let response = client
+            .query(request)
+            .await
+            .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
+
+        serde_json::from_value(response.data).map_err(ProfileError::Serialization)
+    }
+
+    /// Get known followers for a profile
+    ///
+    /// Fetches followers of the specified profile that the authenticated user also follows.
+    /// This is useful for displaying mutual followers or "followed by people you know" information.
+    ///
+    /// # Arguments
+    ///
+    /// * `actor` - DID or handle of the profile to get known followers for
+    /// * `params` - Query parameters including cursor and limit
+    ///
+    /// # Returns
+    ///
+    /// Response containing:
+    /// - `subject`: DID of the queried profile
+    /// - `followers`: List of profiles (people you follow who also follow this profile)
+    /// - `count`: Total number of known followers (may include blocked users)
+    /// - `cursor`: Pagination cursor for next page
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use app_core::profiles::{ProfileService, KnownFollowersParams};
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = XrpcClientConfig::new("https://bsky.social");
+    /// # let client = XrpcClient::new(config);
+    /// let service = ProfileService::new(client);
+    ///
+    /// // Get first page of known followers
+    /// let params = KnownFollowersParams::new();
+    /// let response = service.get_known_followers("alice.bsky.social", params).await?;
+    /// println!("Found {} known followers", response.followers.len());
+    ///
+    /// // Get next page if available
+    /// if let Some(cursor) = response.cursor {
+    ///     let params = KnownFollowersParams::new().with_cursor(cursor);
+    ///     let response = service.get_known_followers("alice.bsky.social", params).await?;
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_known_followers(&self, actor: &str, params: KnownFollowersParams) -> Result<KnownFollowersResponse> {
+        let mut request = XrpcRequest::query("app.bsky.graph.getKnownFollowers")
+            .param("actor", actor.to_string())
+            .param("limit", params.limit.to_string());
+
+        if let Some(cursor) = params.cursor {
+            request = request.param("cursor", cursor);
+        }
+
+        let client = self.client.read().await;
+        let response = client
+            .query(request)
+            .await
+            .map_err(|e| ProfileError::Xrpc(e.to_string()))?;
+
+        serde_json::from_value(response.data).map_err(ProfileError::Serialization)
     }
 
     /// Update the current user's profile
@@ -1025,5 +1336,372 @@ mod tests {
         // Avatar and banner should not be in JSON since they're None
         assert!(!json.contains("avatar"));
         assert!(!json.contains("banner"));
+    }
+
+    // Suggested Follows Tests
+
+    #[test]
+    fn test_suggested_follows_params_new() {
+        let params = SuggestedFollowsParams::new();
+        assert_eq!(params.limit, 25);
+        assert!(params.cursor.is_none());
+        assert!(params.interests.is_none());
+        assert!(params.language.is_none());
+    }
+
+    #[test]
+    fn test_suggested_follows_params_with_cursor() {
+        let params = SuggestedFollowsParams::new()
+            .with_cursor("cursor123".to_string());
+        assert_eq!(params.cursor, Some("cursor123".to_string()));
+    }
+
+    #[test]
+    fn test_suggested_follows_params_with_limit() {
+        let params = SuggestedFollowsParams::new().with_limit(50);
+        assert_eq!(params.limit, 50);
+    }
+
+    #[test]
+    fn test_suggested_follows_params_limit_capped() {
+        let params = SuggestedFollowsParams::new().with_limit(150);
+        assert_eq!(params.limit, 100);
+    }
+
+    #[test]
+    fn test_suggested_follows_params_with_interests() {
+        let params = SuggestedFollowsParams::new()
+            .with_interests(vec!["tech".to_string(), "sports".to_string()]);
+        assert_eq!(params.interests, Some(vec!["tech".to_string(), "sports".to_string()]));
+    }
+
+    #[test]
+    fn test_suggested_follows_params_with_language() {
+        let params = SuggestedFollowsParams::new().with_language("en");
+        assert_eq!(params.language, Some("en".to_string()));
+    }
+
+    #[test]
+    fn test_suggested_follows_params_builder_chain() {
+        let params = SuggestedFollowsParams::new()
+            .with_cursor("abc".to_string())
+            .with_limit(30)
+            .with_interests(vec!["tech".to_string()])
+            .with_language("es");
+
+        assert_eq!(params.cursor, Some("abc".to_string()));
+        assert_eq!(params.limit, 30);
+        assert_eq!(params.interests, Some(vec!["tech".to_string()]));
+        assert_eq!(params.language, Some("es".to_string()));
+    }
+
+    #[test]
+    fn test_suggested_follows_params_default() {
+        let params = SuggestedFollowsParams::default();
+        assert_eq!(params.limit, 0); // Default trait gives 0
+        assert!(params.cursor.is_none());
+    }
+
+    #[test]
+    fn test_suggested_follows_params_clone() {
+        let params1 = SuggestedFollowsParams::new()
+            .with_limit(40)
+            .with_language("en");
+        let params2 = params1.clone();
+
+        assert_eq!(params1.limit, params2.limit);
+        assert_eq!(params1.language, params2.language);
+    }
+
+    #[test]
+    fn test_suggested_follows_response_serialization() {
+        let response = SuggestedFollowsResponse {
+            actors: vec![],
+            cursor: Some("next_page".to_string()),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("actors"));
+        assert!(json.contains("cursor"));
+        assert!(json.contains("next_page"));
+    }
+
+    #[test]
+    fn test_suggested_follows_response_without_cursor() {
+        let response = SuggestedFollowsResponse {
+            actors: vec![],
+            cursor: None,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("actors"));
+        // Cursor should not be in JSON since it's None
+        assert!(!json.contains("cursor"));
+    }
+
+    #[test]
+    fn test_suggested_follows_by_actor_response_serialization() {
+        let response = SuggestedFollowsByActorResponse {
+            suggestions: vec![],
+            is_fallback: false,
+            rec_id: Some("rec123".to_string()),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("suggestions"));
+        assert!(json.contains("isFallback"));
+        assert!(json.contains("recId"));
+        assert!(json.contains("rec123"));
+    }
+
+    #[test]
+    fn test_suggested_follows_by_actor_response_fallback() {
+        let response = SuggestedFollowsByActorResponse {
+            suggestions: vec![],
+            is_fallback: true,
+            rec_id: None,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("isFallback"));
+        assert!(json.contains("true"));
+        // rec_id should not be in JSON since it's None
+        assert!(!json.contains("recId"));
+    }
+
+    #[test]
+    fn test_suggested_follows_by_actor_response_default_is_fallback() {
+        let json = r#"{"suggestions": []}"#;
+        let response: SuggestedFollowsByActorResponse = serde_json::from_str(json).unwrap();
+        assert!(!response.is_fallback); // Default is false
+        assert!(response.suggestions.is_empty());
+        assert!(response.rec_id.is_none());
+    }
+
+    #[test]
+    fn test_suggested_follows_params_multiple_interests() {
+        let interests = vec![
+            "tech".to_string(),
+            "programming".to_string(),
+            "rust".to_string(),
+        ];
+        let params = SuggestedFollowsParams::new().with_interests(interests.clone());
+        assert_eq!(params.interests, Some(interests));
+    }
+
+    #[test]
+    fn test_suggested_follows_params_empty_interests() {
+        let params = SuggestedFollowsParams::new().with_interests(vec![]);
+        assert_eq!(params.interests, Some(vec![]));
+    }
+
+    #[test]
+    fn test_suggested_follows_params_limit_boundary() {
+        // Zero should be zero
+        let params = SuggestedFollowsParams::new().with_limit(0);
+        assert_eq!(params.limit, 0);
+
+        // Exactly 100 should be 100
+        let params = SuggestedFollowsParams::new().with_limit(100);
+        assert_eq!(params.limit, 100);
+
+        // Over 100 should cap at 100
+        let params = SuggestedFollowsParams::new().with_limit(1000);
+        assert_eq!(params.limit, 100);
+    }
+
+    #[test]
+    fn test_suggested_follows_params_debug() {
+        let params = SuggestedFollowsParams::new().with_limit(25);
+        let debug_str = format!("{:?}", params);
+        assert!(debug_str.contains("SuggestedFollowsParams"));
+        assert!(debug_str.contains("25"));
+    }
+
+    // ========================================================================
+    // Known Followers Tests
+    // ========================================================================
+
+    #[test]
+    fn test_known_followers_params_new() {
+        let params = KnownFollowersParams::new();
+        assert_eq!(params.cursor, None);
+        assert_eq!(params.limit, 50);
+    }
+
+    #[test]
+    fn test_known_followers_params_default() {
+        let params = KnownFollowersParams::default();
+        assert_eq!(params.cursor, None);
+        assert_eq!(params.limit, 0);
+    }
+
+    #[test]
+    fn test_known_followers_params_with_cursor() {
+        let params = KnownFollowersParams::new().with_cursor("test_cursor".to_string());
+        assert_eq!(params.cursor, Some("test_cursor".to_string()));
+        assert_eq!(params.limit, 50);
+    }
+
+    #[test]
+    fn test_known_followers_params_with_limit() {
+        let params = KnownFollowersParams::new().with_limit(25);
+        assert_eq!(params.cursor, None);
+        assert_eq!(params.limit, 25);
+    }
+
+    #[test]
+    fn test_known_followers_params_limit_capped() {
+        let params = KnownFollowersParams::new().with_limit(200);
+        assert_eq!(params.limit, 100);
+    }
+
+    #[test]
+    fn test_known_followers_params_builder_chain() {
+        let params = KnownFollowersParams::new()
+            .with_cursor("abc123".to_string())
+            .with_limit(30);
+
+        assert_eq!(params.cursor, Some("abc123".to_string()));
+        assert_eq!(params.limit, 30);
+    }
+
+    #[test]
+    fn test_known_followers_params_clone() {
+        let params1 = KnownFollowersParams::new().with_limit(20);
+        let params2 = params1.clone();
+
+        assert_eq!(params1.limit, params2.limit);
+        assert_eq!(params1.cursor, params2.cursor);
+    }
+
+    #[test]
+    fn test_known_followers_params_debug() {
+        let params = KnownFollowersParams::new().with_limit(50);
+        let debug_str = format!("{:?}", params);
+        assert!(debug_str.contains("KnownFollowersParams"));
+        assert!(debug_str.contains("50"));
+    }
+
+    #[test]
+    fn test_known_followers_response_serialization() {
+        let json = r#"{
+            "subject": "did:plc:abc123",
+            "followers": [],
+            "count": 5,
+            "cursor": "next_page"
+        }"#;
+
+        let response: KnownFollowersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.subject, "did:plc:abc123");
+        assert_eq!(response.followers.len(), 0);
+        assert_eq!(response.count, 5);
+        assert_eq!(response.cursor, Some("next_page".to_string()));
+    }
+
+    #[test]
+    fn test_known_followers_response_without_cursor() {
+        let json = r#"{
+            "subject": "did:plc:xyz789",
+            "followers": [],
+            "count": 0
+        }"#;
+
+        let response: KnownFollowersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.subject, "did:plc:xyz789");
+        assert_eq!(response.followers.len(), 0);
+        assert_eq!(response.count, 0);
+        assert_eq!(response.cursor, None);
+    }
+
+    #[test]
+    fn test_known_followers_response_with_followers() {
+        let json = r#"{
+            "subject": "did:plc:target",
+            "followers": [
+                {
+                    "did": "did:plc:user1",
+                    "handle": "user1.test"
+                },
+                {
+                    "did": "did:plc:user2",
+                    "handle": "user2.test"
+                }
+            ],
+            "count": 10
+        }"#;
+
+        let response: KnownFollowersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.subject, "did:plc:target");
+        assert_eq!(response.followers.len(), 2);
+        assert_eq!(response.count, 10);
+        assert_eq!(response.followers[0].did, "did:plc:user1");
+        assert_eq!(response.followers[0].handle, "user1.test");
+        assert_eq!(response.followers[1].did, "did:plc:user2");
+        assert_eq!(response.followers[1].handle, "user2.test");
+    }
+
+    #[test]
+    fn test_known_followers_response_count_exceeds_followers() {
+        // Count can be higher than followers.length because it includes blocked users
+        let json = r#"{
+            "subject": "did:plc:target",
+            "followers": [
+                {
+                    "did": "did:plc:user1",
+                    "handle": "user1.test"
+                }
+            ],
+            "count": 5
+        }"#;
+
+        let response: KnownFollowersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.followers.len(), 1);
+        assert_eq!(response.count, 5);
+        // This is expected: count includes blocked users, followers array doesn't
+    }
+
+    #[test]
+    fn test_known_followers_params_limit_boundary() {
+        // Zero should be zero
+        let params = KnownFollowersParams::new().with_limit(0);
+        assert_eq!(params.limit, 0);
+
+        // Exactly 100 should be 100
+        let params = KnownFollowersParams::new().with_limit(100);
+        assert_eq!(params.limit, 100);
+
+        // Over 100 should cap at 100
+        let params = KnownFollowersParams::new().with_limit(500);
+        assert_eq!(params.limit, 100);
+    }
+
+    #[test]
+    fn test_known_followers_response_clone() {
+        let json = r#"{
+            "subject": "did:plc:abc",
+            "followers": [],
+            "count": 3
+        }"#;
+
+        let response1: KnownFollowersResponse = serde_json::from_str(json).unwrap();
+        let response2 = response1.clone();
+
+        assert_eq!(response1.subject, response2.subject);
+        assert_eq!(response1.count, response2.count);
+    }
+
+    #[test]
+    fn test_known_followers_response_debug() {
+        let json = r#"{
+            "subject": "did:plc:test",
+            "followers": [],
+            "count": 1
+        }"#;
+
+        let response: KnownFollowersResponse = serde_json::from_str(json).unwrap();
+        let debug_str = format!("{:?}", response);
+        assert!(debug_str.contains("KnownFollowersResponse"));
+        assert!(debug_str.contains("did:plc:test"));
     }
 }
