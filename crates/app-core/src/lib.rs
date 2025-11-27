@@ -13,6 +13,7 @@ pub mod branding;
 pub mod editor;
 pub mod feeds;
 pub mod interactions;
+pub mod link_preview;
 pub mod lists;
 pub mod media;
 pub mod messages;
