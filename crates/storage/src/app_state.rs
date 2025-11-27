@@ -6,6 +6,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::preferences::{MessagePreferences, NotificationPreferences};
+
 /// Color mode preference
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -210,6 +212,14 @@ pub struct AppPersistedState {
     /// Each account can have its own preferences that override the global ones
     #[serde(default)]
     pub account_preferences: HashMap<String, AccountPreferences>,
+
+    /// Notification preferences
+    #[serde(default)]
+    pub notification_preferences: NotificationPreferences,
+
+    /// Message preferences
+    #[serde(default)]
+    pub message_preferences: MessagePreferences,
 }
 
 fn default_true() -> bool {
@@ -239,6 +249,8 @@ impl Default for AppPersistedState {
             analytics_enabled: true,
             crash_reporting_enabled: true,
             account_preferences: HashMap::new(),
+            notification_preferences: NotificationPreferences::default(),
+            message_preferences: MessagePreferences::default(),
         }
     }
 }
@@ -572,6 +584,8 @@ mod tests {
             analytics_enabled: false,
             crash_reporting_enabled: true,
             account_preferences: HashMap::new(),
+            notification_preferences: NotificationPreferences::default(),
+            message_preferences: MessagePreferences::default(),
         };
 
         let json = serde_json::to_string_pretty(&state).unwrap();

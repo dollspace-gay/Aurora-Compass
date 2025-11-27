@@ -11,9 +11,13 @@ pub mod cache;
 pub mod database;
 pub mod kv;
 pub mod persistence;
+pub mod preferences;
 pub mod sync;
 
 pub use app_state::{AppPersistedState, ColorMode, LanguagePrefs, OnboardingState};
+pub use preferences::{
+    MessagePreferences, MessagePrivacy, NotificationPreferences, NotificationTypeSettings,
+};
 pub use cache::{CacheConfig, CacheError, DiskCache, MemoryCache, TieredCache};
 pub use database::{
     Database, DatabaseConfig, DatabaseError, DatabaseTransaction, MigrationDefinition,
