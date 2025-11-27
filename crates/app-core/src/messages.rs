@@ -1119,6 +1119,454 @@ impl Clone for MessageEventListener {
     }
 }
 
+// ============================================================================
+// Message Requests
+// ============================================================================
+
+/// Status of a message request
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageRequestStatus {
+    /// Request is pending review
+    Pending,
+    /// Request has been accepted
+    Accepted,
+    /// Request has been declined
+    Declined,
+}
+
+impl Default for MessageRequestStatus {
+    fn default() -> Self {
+        Self::Pending
+    }
+}
+
+/// A message request from a non-followed account
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageRequest {
+    /// Request ID
+    pub id: String,
+    /// Sender information
+    pub sender: MessageSender,
+    /// Preview of the message text
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_preview: Option<String>,
+    /// Timestamp when request was received
+    pub received_at: DateTime<Utc>,
+    /// Request status
+    #[serde(default)]
+    pub status: MessageRequestStatus,
+    /// Conversation ID (if accepted)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
+}
+
+impl MessageRequest {
+    /// Create a new message request
+    pub fn new(
+        id: impl Into<String>,
+        sender: MessageSender,
+        received_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            sender,
+            message_preview: None,
+            received_at,
+            status: MessageRequestStatus::Pending,
+            conversation_id: None,
+        }
+    }
+
+    /// Check if the request is pending
+    pub fn is_pending(&self) -> bool {
+        self.status == MessageRequestStatus::Pending
+    }
+
+    /// Check if the request has been accepted
+    pub fn is_accepted(&self) -> bool {
+        self.status == MessageRequestStatus::Accepted
+    }
+
+    /// Check if the request has been declined
+    pub fn is_declined(&self) -> bool {
+        self.status == MessageRequestStatus::Declined
+    }
+}
+
+/// Filter for message requests
+#[derive(Debug, Clone, Default)]
+pub struct MessageRequestFilter {
+    /// Filter by status
+    pub status: Option<MessageRequestStatus>,
+    /// Search query for sender name or handle
+    pub search_query: Option<String>,
+    /// Limit number of results
+    pub limit: Option<u32>,
+}
+
+/// Parameters for listing message requests
+#[derive(Debug, Clone, Default)]
+pub struct ListMessageRequestsParams {
+    /// Maximum number of requests to return
+    pub limit: Option<u32>,
+    /// Cursor for pagination
+    pub cursor: Option<String>,
+}
+
+/// Response from listing message requests
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListMessageRequestsResponse {
+    /// List of message requests
+    pub requests: Vec<MessageRequest>,
+    /// Cursor for next page
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+/// Request to accept a message request
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptMessageRequestParams {
+    /// Request ID to accept
+    pub request_id: String,
+}
+
+/// Response from accepting a message request
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptMessageRequestResponse {
+    /// ID of the created conversation
+    pub conversation_id: String,
+}
+
+/// Request to decline a message request
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeclineMessageRequestParams {
+    /// Request ID to decline
+    pub request_id: String,
+}
+
+/// Message request queue manager
+///
+/// Manages incoming message requests from non-followed accounts.
+/// Provides filtering, sorting, and batch operations for handling requests.
+///
+/// # Example
+///
+/// ```rust
+/// use app_core::messages::{MessageRequestQueue, MessageRequest, MessageRequestFilter, MessageRequestStatus};
+///
+/// let requests = vec![/* your message requests */];
+/// let queue = MessageRequestQueue::new(requests);
+///
+/// // Filter to show only pending
+/// let filter = MessageRequestFilter {
+///     status: Some(MessageRequestStatus::Pending),
+///     ..Default::default()
+/// };
+/// let pending = queue.filter(&filter);
+///
+/// println!("Pending requests: {}", pending.len());
+/// ```
+pub struct MessageRequestQueue {
+    requests: Vec<MessageRequest>,
+}
+
+impl MessageRequestQueue {
+    /// Create a new message request queue
+    pub fn new(requests: Vec<MessageRequest>) -> Self {
+        Self { requests }
+    }
+
+    /// Get all requests
+    pub fn requests(&self) -> &[MessageRequest] {
+        &self.requests
+    }
+
+    /// Get a mutable reference to requests
+    pub fn requests_mut(&mut self) -> &mut Vec<MessageRequest> {
+        &mut self.requests
+    }
+
+    /// Filter requests based on criteria
+    pub fn filter(&self, filter: &MessageRequestFilter) -> Vec<&MessageRequest> {
+        let mut filtered: Vec<&MessageRequest> = self
+            .requests
+            .iter()
+            .filter(|req| {
+                // Filter by status
+                if let Some(status) = filter.status {
+                    if req.status != status {
+                        return false;
+                    }
+                }
+
+                // Filter by search query
+                if let Some(query) = &filter.search_query {
+                    let query_lower = query.to_lowercase();
+
+                    let name_match = req
+                        .sender
+                        .display_name
+                        .as_ref()
+                        .map(|n| n.to_lowercase().contains(&query_lower))
+                        .unwrap_or(false)
+                        || req.sender.handle.to_lowercase().contains(&query_lower);
+
+                    let message_match = req
+                        .message_preview
+                        .as_ref()
+                        .map(|m| m.to_lowercase().contains(&query_lower))
+                        .unwrap_or(false);
+
+                    if !name_match && !message_match {
+                        return false;
+                    }
+                }
+
+                true
+            })
+            .collect();
+
+        // Apply limit if specified
+        if let Some(limit) = filter.limit {
+            filtered.truncate(limit as usize);
+        }
+
+        filtered
+    }
+
+    /// Get only pending requests
+    pub fn pending_requests(&self) -> Vec<&MessageRequest> {
+        self.requests
+            .iter()
+            .filter(|r| r.is_pending())
+            .collect()
+    }
+
+    /// Get only accepted requests
+    pub fn accepted_requests(&self) -> Vec<&MessageRequest> {
+        self.requests
+            .iter()
+            .filter(|r| r.is_accepted())
+            .collect()
+    }
+
+    /// Get only declined requests
+    pub fn declined_requests(&self) -> Vec<&MessageRequest> {
+        self.requests
+            .iter()
+            .filter(|r| r.is_declined())
+            .collect()
+    }
+
+    /// Count requests by status
+    pub fn count_by_status(&self) -> (usize, usize, usize) {
+        let pending = self.requests.iter().filter(|r| r.is_pending()).count();
+        let accepted = self.requests.iter().filter(|r| r.is_accepted()).count();
+        let declined = self.requests.iter().filter(|r| r.is_declined()).count();
+        (pending, accepted, declined)
+    }
+
+    /// Find a request by ID
+    pub fn find_by_id(&self, id: &str) -> Option<&MessageRequest> {
+        self.requests.iter().find(|r| r.id == id)
+    }
+
+    /// Find a request by sender DID
+    pub fn find_by_sender(&self, did: &str) -> Option<&MessageRequest> {
+        self.requests.iter().find(|r| r.sender.did == did)
+    }
+
+    /// Update request status
+    pub fn update_status(&mut self, request_id: &str, status: MessageRequestStatus) -> bool {
+        if let Some(request) = self.requests.iter_mut().find(|r| r.id == request_id) {
+            request.status = status;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Remove a request from the queue
+    pub fn remove(&mut self, request_id: &str) -> Option<MessageRequest> {
+        if let Some(index) = self.requests.iter().position(|r| r.id == request_id) {
+            Some(self.requests.remove(index))
+        } else {
+            None
+        }
+    }
+
+    /// Sort requests by received time (newest first)
+    pub fn sort_by_recent(&mut self) {
+        self.requests
+            .sort_by(|a, b| b.received_at.cmp(&a.received_at));
+    }
+
+    /// Sort requests by sender name
+    pub fn sort_by_sender(&mut self) {
+        self.requests.sort_by(|a, b| {
+            let name_a = a
+                .sender
+                .display_name
+                .as_ref()
+                .unwrap_or(&a.sender.handle)
+                .to_lowercase();
+            let name_b = b
+                .sender
+                .display_name
+                .as_ref()
+                .unwrap_or(&b.sender.handle)
+                .to_lowercase();
+            name_a.cmp(&name_b)
+        });
+    }
+}
+
+/// Service for managing message requests
+impl ConversationService {
+    /// List message requests
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - Parameters for listing message requests
+    ///
+    /// # Returns
+    ///
+    /// List of message requests with pagination cursor
+    pub async fn list_message_requests(
+        &self,
+        params: ListMessageRequestsParams,
+    ) -> Result<ListMessageRequestsResponse> {
+        let mut request = XrpcRequest::query("chat.bsky.convo.listMessageRequests");
+
+        if let Some(limit) = params.limit {
+            request = request.param("limit", limit.to_string());
+        }
+        if let Some(cursor) = params.cursor {
+            request = request.param("cursor", cursor);
+        }
+
+        let client = self.client.read().await;
+        let response = client
+            .query(request)
+            .await
+            .map_err(|e| MessageError::Xrpc(e.to_string()))?;
+
+        Ok(response.data)
+    }
+
+    /// Accept a message request
+    ///
+    /// # Arguments
+    ///
+    /// * `request_id` - ID of the request to accept
+    ///
+    /// # Returns
+    ///
+    /// Response containing the created conversation ID
+    pub async fn accept_message_request(
+        &self,
+        request_id: impl Into<String>,
+    ) -> Result<AcceptMessageRequestResponse> {
+        let request_body = AcceptMessageRequestParams {
+            request_id: request_id.into(),
+        };
+
+        let request = XrpcRequest::procedure("chat.bsky.convo.acceptMessageRequest")
+            .json_body(&request_body)
+            .map_err(MessageError::Serialization)?;
+
+        let client = self.client.read().await;
+        let response = client
+            .procedure(request)
+            .await
+            .map_err(|e| MessageError::Xrpc(e.to_string()))?;
+
+        Ok(response.data)
+    }
+
+    /// Decline a message request
+    ///
+    /// # Arguments
+    ///
+    /// * `request_id` - ID of the request to decline
+    pub async fn decline_message_request(&self, request_id: impl Into<String>) -> Result<()> {
+        let request_body = DeclineMessageRequestParams {
+            request_id: request_id.into(),
+        };
+
+        let request = XrpcRequest::procedure("chat.bsky.convo.declineMessageRequest")
+            .json_body(&request_body)
+            .map_err(MessageError::Serialization)?;
+
+        let client = self.client.read().await;
+        client
+            .procedure::<serde_json::Value>(request)
+            .await
+            .map_err(|e| MessageError::Xrpc(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Accept multiple message requests
+    ///
+    /// # Arguments
+    ///
+    /// * `request_ids` - IDs of requests to accept
+    ///
+    /// # Returns
+    ///
+    /// Vector of conversation IDs for accepted requests
+    pub async fn accept_message_requests_batch(
+        &self,
+        request_ids: Vec<String>,
+    ) -> Result<Vec<AcceptMessageRequestResponse>> {
+        let mut responses = Vec::new();
+
+        for request_id in request_ids {
+            match self.accept_message_request(request_id).await {
+                Ok(response) => responses.push(response),
+                Err(e) => {
+                    // Continue with other requests even if one fails
+                    eprintln!("Failed to accept message request: {}", e);
+                }
+            }
+        }
+
+        Ok(responses)
+    }
+
+    /// Decline multiple message requests
+    ///
+    /// # Arguments
+    ///
+    /// * `request_ids` - IDs of requests to decline
+    ///
+    /// # Returns
+    ///
+    /// Number of successfully declined requests
+    pub async fn decline_message_requests_batch(&self, request_ids: Vec<String>) -> Result<usize> {
+        let mut declined_count = 0;
+
+        for request_id in request_ids {
+            match self.decline_message_request(request_id).await {
+                Ok(_) => declined_count += 1,
+                Err(e) => {
+                    // Continue with other requests even if one fails
+                    eprintln!("Failed to decline message request: {}", e);
+                }
+            }
+        }
+
+        Ok(declined_count)
+    }
+}
+
 /// Extension trait for InboxView to integrate with event listener
 pub trait InboxViewExt {
     /// Apply a message event to the inbox
@@ -2021,5 +2469,412 @@ mod tests {
         let deserialized: TypingIndicator = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.user_did, "did:plc:test");
         assert!(deserialized.is_typing);
+    }
+
+    // Message Request Tests
+
+    fn create_test_message_request(
+        id: &str,
+        sender_name: &str,
+        message_preview: Option<&str>,
+        hours_ago: i64,
+        status: MessageRequestStatus,
+    ) -> MessageRequest {
+        let sender = MessageSender {
+            did: format!("did:plc:{}", id),
+            handle: format!("{}.bsky.social", sender_name.to_lowercase()),
+            display_name: Some(sender_name.to_string()),
+            avatar: None,
+        };
+
+        let received_at = Utc::now() - chrono::Duration::hours(hours_ago);
+
+        MessageRequest {
+            id: id.to_string(),
+            sender,
+            message_preview: message_preview.map(|s| s.to_string()),
+            received_at,
+            status,
+            conversation_id: None,
+        }
+    }
+
+    #[test]
+    fn test_message_request_creation() {
+        let sender = MessageSender {
+            did: "did:plc:test123".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            display_name: Some("Alice".to_string()),
+            avatar: None,
+        };
+
+        let now = Utc::now();
+        let request = MessageRequest::new("req1", sender.clone(), now);
+
+        assert_eq!(request.id, "req1");
+        assert_eq!(request.sender.did, "did:plc:test123");
+        assert_eq!(request.status, MessageRequestStatus::Pending);
+        assert!(request.is_pending());
+        assert!(!request.is_accepted());
+        assert!(!request.is_declined());
+    }
+
+    #[test]
+    fn test_message_request_status() {
+        let sender = MessageSender {
+            did: "did:plc:test".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            display_name: None,
+            avatar: None,
+        };
+
+        let mut request = MessageRequest::new("req1", sender, Utc::now());
+        assert!(request.is_pending());
+
+        request.status = MessageRequestStatus::Accepted;
+        assert!(request.is_accepted());
+        assert!(!request.is_pending());
+
+        request.status = MessageRequestStatus::Declined;
+        assert!(request.is_declined());
+        assert!(!request.is_accepted());
+    }
+
+    #[test]
+    fn test_message_request_status_default() {
+        assert_eq!(MessageRequestStatus::default(), MessageRequestStatus::Pending);
+    }
+
+    #[test]
+    fn test_message_request_queue_creation() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello!"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi there"), 2, MessageRequestStatus::Pending),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+        assert_eq!(queue.requests().len(), 2);
+    }
+
+    #[test]
+    fn test_message_request_queue_pending_requests() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Accepted),
+            create_test_message_request("3", "Charlie", Some("Hey"), 3, MessageRequestStatus::Pending),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+        let pending = queue.pending_requests();
+
+        assert_eq!(pending.len(), 2);
+        assert!(pending.iter().all(|r| r.is_pending()));
+    }
+
+    #[test]
+    fn test_message_request_queue_accepted_requests() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Accepted),
+            create_test_message_request("3", "Charlie", Some("Hey"), 3, MessageRequestStatus::Accepted),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+        let accepted = queue.accepted_requests();
+
+        assert_eq!(accepted.len(), 2);
+        assert!(accepted.iter().all(|r| r.is_accepted()));
+    }
+
+    #[test]
+    fn test_message_request_queue_declined_requests() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Declined),
+            create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+        let declined = queue.declined_requests();
+
+        assert_eq!(declined.len(), 1);
+        assert_eq!(declined[0].id, "1");
+    }
+
+    #[test]
+    fn test_message_request_queue_count_by_status() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
+            create_test_message_request("3", "Charlie", Some("Hey"), 3, MessageRequestStatus::Accepted),
+            create_test_message_request("4", "Dave", Some("Yo"), 4, MessageRequestStatus::Declined),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+        let (pending, accepted, declined) = queue.count_by_status();
+
+        assert_eq!(pending, 2);
+        assert_eq!(accepted, 1);
+        assert_eq!(declined, 1);
+    }
+
+    #[test]
+    fn test_message_request_queue_find_by_id() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+
+        let found = queue.find_by_id("1");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, "1");
+
+        let not_found = queue.find_by_id("999");
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_message_request_queue_find_by_sender() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+
+        let found = queue.find_by_sender("did:plc:1");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().sender.display_name, Some("Alice".to_string()));
+
+        let not_found = queue.find_by_sender("did:plc:999");
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_message_request_queue_update_status() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+        ];
+
+        let mut queue = MessageRequestQueue::new(requests);
+
+        assert!(queue.update_status("1", MessageRequestStatus::Accepted));
+        assert_eq!(queue.find_by_id("1").unwrap().status, MessageRequestStatus::Accepted);
+
+        assert!(!queue.update_status("999", MessageRequestStatus::Declined));
+    }
+
+    #[test]
+    fn test_message_request_queue_remove() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
+        ];
+
+        let mut queue = MessageRequestQueue::new(requests);
+
+        let removed = queue.remove("1");
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().id, "1");
+        assert_eq!(queue.requests().len(), 1);
+
+        let not_found = queue.remove("999");
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_message_request_queue_sort_by_recent() {
+        let mut queue = MessageRequestQueue::new(vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 5, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("3", "Charlie", Some("Hey"), 10, MessageRequestStatus::Pending),
+        ]);
+
+        queue.sort_by_recent();
+
+        let ids: Vec<&str> = queue.requests().iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["2", "1", "3"]); // Most recent first
+    }
+
+    #[test]
+    fn test_message_request_queue_sort_by_sender() {
+        let mut queue = MessageRequestQueue::new(vec![
+            create_test_message_request("1", "Charlie", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Alice", Some("Hi"), 2, MessageRequestStatus::Pending),
+            create_test_message_request("3", "Bob", Some("Hey"), 3, MessageRequestStatus::Pending),
+        ]);
+
+        queue.sort_by_sender();
+
+        let names: Vec<String> = queue
+            .requests()
+            .iter()
+            .map(|r| r.sender.display_name.as_ref().unwrap().clone())
+            .collect();
+
+        assert_eq!(names, vec!["Alice", "Bob", "Charlie"]);
+    }
+
+    #[test]
+    fn test_message_request_queue_filter_by_status() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Accepted),
+            create_test_message_request("3", "Charlie", Some("Hey"), 3, MessageRequestStatus::Pending),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+
+        let filter = MessageRequestFilter {
+            status: Some(MessageRequestStatus::Pending),
+            ..Default::default()
+        };
+
+        let filtered = queue.filter(&filter);
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().all(|r| r.is_pending()));
+    }
+
+    #[test]
+    fn test_message_request_queue_filter_by_search_name() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
+            create_test_message_request("3", "Alicia", Some("Hey"), 3, MessageRequestStatus::Pending),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+
+        let filter = MessageRequestFilter {
+            search_query: Some("ali".to_string()),
+            ..Default::default()
+        };
+
+        let filtered = queue.filter(&filter);
+        assert_eq!(filtered.len(), 2); // Alice and Alicia
+    }
+
+    #[test]
+    fn test_message_request_queue_filter_by_search_message() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello world"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi there"), 2, MessageRequestStatus::Pending),
+            create_test_message_request("3", "Charlie", Some("Hello everyone"), 3, MessageRequestStatus::Pending),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+
+        let filter = MessageRequestFilter {
+            search_query: Some("hello".to_string()),
+            ..Default::default()
+        };
+
+        let filtered = queue.filter(&filter);
+        assert_eq!(filtered.len(), 2); // Alice and Charlie
+    }
+
+    #[test]
+    fn test_message_request_queue_filter_with_limit() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
+            create_test_message_request("3", "Charlie", Some("Hey"), 3, MessageRequestStatus::Pending),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+
+        let filter = MessageRequestFilter {
+            limit: Some(2),
+            ..Default::default()
+        };
+
+        let filtered = queue.filter(&filter);
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_message_request_queue_filter_combined() {
+        let requests = vec![
+            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request("2", "Bob", Some("Hello"), 2, MessageRequestStatus::Accepted),
+            create_test_message_request("3", "Charlie", Some("Hello"), 3, MessageRequestStatus::Pending),
+        ];
+
+        let queue = MessageRequestQueue::new(requests);
+
+        let filter = MessageRequestFilter {
+            status: Some(MessageRequestStatus::Pending),
+            search_query: Some("hello".to_string()),
+            limit: Some(1),
+        };
+
+        let filtered = queue.filter(&filter);
+        assert_eq!(filtered.len(), 1);
+        assert!(filtered[0].is_pending());
+    }
+
+    #[test]
+    fn test_message_request_filter_default() {
+        let filter = MessageRequestFilter::default();
+        assert!(filter.status.is_none());
+        assert!(filter.search_query.is_none());
+        assert!(filter.limit.is_none());
+    }
+
+    #[test]
+    fn test_message_request_status_variants() {
+        assert_eq!(MessageRequestStatus::Pending, MessageRequestStatus::Pending);
+        assert_ne!(MessageRequestStatus::Pending, MessageRequestStatus::Accepted);
+        assert_ne!(MessageRequestStatus::Accepted, MessageRequestStatus::Declined);
+    }
+
+    #[test]
+    fn test_message_request_serde() {
+        let sender = MessageSender {
+            did: "did:plc:test".to_string(),
+            handle: "alice.bsky.social".to_string(),
+            display_name: Some("Alice".to_string()),
+            avatar: None,
+        };
+
+        let request = MessageRequest::new("req1", sender, Utc::now());
+
+        // Test serialization
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("req1"));
+        assert!(json.contains("pending"));
+
+        // Test deserialization
+        let deserialized: MessageRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, "req1");
+        assert_eq!(deserialized.status, MessageRequestStatus::Pending);
+    }
+
+    #[test]
+    fn test_list_message_requests_params_default() {
+        let params = ListMessageRequestsParams::default();
+        assert!(params.limit.is_none());
+        assert!(params.cursor.is_none());
+    }
+
+    #[test]
+    fn test_accept_message_request_params() {
+        let params = AcceptMessageRequestParams {
+            request_id: "req123".to_string(),
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("req123"));
+    }
+
+    #[test]
+    fn test_decline_message_request_params() {
+        let params = DeclineMessageRequestParams {
+            request_id: "req123".to_string(),
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("req123"));
     }
 }
