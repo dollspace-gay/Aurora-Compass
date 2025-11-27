@@ -11,6 +11,7 @@ pub mod autocomplete;
 pub mod bookmarks;
 pub mod branding;
 pub mod editor;
+pub mod embeds;
 pub mod feeds;
 pub mod interactions;
 pub mod link_preview;
