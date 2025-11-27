@@ -8,10 +8,12 @@
 
 pub mod auth;
 pub mod autocomplete;
+pub mod bookmarks;
 pub mod branding;
 pub mod editor;
 pub mod feeds;
 pub mod interactions;
+pub mod lists;
 pub mod media;
 pub mod messages;
 pub mod notifications;
