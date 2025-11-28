@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LabelBehavior","LabelError"],"fn":["default_severity","default_true"],"struct":["Label","LabelApplicator","LabelDefinition","LabelLocale","LabelResult","LabelerPreferences","LabelerProfile","LabelerService","LabelerSubscriptions"],"type":["Result"]};

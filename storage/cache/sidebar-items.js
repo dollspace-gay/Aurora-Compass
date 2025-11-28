@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CacheError"],"struct":["CacheConfig","CacheEntry","DiskCache","MemoryCache","TieredCache"],"type":["Result"]};

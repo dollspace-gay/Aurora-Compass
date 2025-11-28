@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_POLL_INTERVAL","MAX_DISPLAY_COUNT"],"enum":["UnreadDisplay","UnreadEvent"],"struct":["PollingHandle","UnreadState","UnreadTracker"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BANNER","CARD","PORTRAIT","SQUARE","VIDEO"]};

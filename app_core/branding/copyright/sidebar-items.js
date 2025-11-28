@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HOLDER","LICENSE","YEAR"],"fn":["notice"]};

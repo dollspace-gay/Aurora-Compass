@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CidError"],"fn":["cid_to_string","generate_cid","parse_cid","validate_cid","validate_cid_string"],"type":["Result"]};

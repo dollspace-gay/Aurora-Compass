@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SessionError","SessionManagerError"],"fn":["default_active","get_jwt_expiration","is_jwt_expired","is_jwt_expiring_soon","is_session_expired","is_signup_queued","parse_jwt_claims"],"mod":["manager"],"struct":["AccountExport","AtpSessionData","JwtClaims","SessionAccount","SessionManager","SessionStorage"],"type":["Result"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_PAGES","PAGE_SIZE"],"enum":["ListError","ListPurpose"],"struct":["CreateListParams","CreateRecordResponse","GetListResponse","GetListsResponse","ListItemRecord","ListItemView","ListService","ListView","ListViewBasic","ListViewerState","UpdateListParams"],"type":["Result"]};

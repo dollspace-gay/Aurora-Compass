@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_DETAILS_LENGTH"],"enum":["ReportError","ReportReason","ReportSubject"],"struct":["AccountSubject","ChatMessageSubject","CreateReportRequest","CreateReportResponse","RecordSubject","ReportResult","ReportService"],"type":["Result"]};

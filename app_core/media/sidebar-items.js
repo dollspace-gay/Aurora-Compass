@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_JPEG_QUALITY","MAX_IMAGE_DIMENSION","MAX_IMAGE_SIZE"],"enum":["MediaError","SupportedFormat"],"fn":["validate_dimensions","validate_size"],"struct":["ImageOptions","ImageProcessor","ProcessedImage"],"type":["Result"]};

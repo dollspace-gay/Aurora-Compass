@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_HTML_SIZE","MAX_REDIRECTS"],"enum":["LinkPreviewError"],"struct":["CachedPreview","HtmlMetadata","LinkPreview","MetadataParser","PreviewCache"],"type":["Result"]};

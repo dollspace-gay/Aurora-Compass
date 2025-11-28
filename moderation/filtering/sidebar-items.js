@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_MUTED_WORDS"],"enum":["FilterAction","FilterError","FilterReason"],"fn":["default_true"],"struct":["ContentFilter","ContentVisibility","ContentWarningConfig","FilterPreferences","FilterResult","FilterableContent"],"type":["Result"]};

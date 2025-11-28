@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LexiconDef","RecordKeyType"],"fn":["default_params_type","default_procedure_type","default_query_type","default_record_type","default_subscription_type"],"struct":["LexBody","LexParams","LexProcedure","LexQuery","LexRecord","LexSubscription","LexXrpcError","LexiconDoc"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SessionStateError"],"struct":["AccountList","AccountsQuery","AddAccountMutation","CurrentSession","CurrentSessionQuery","RemoveAccountMutation","SessionState","SwitchAccountMutation"],"type":["Result"]};

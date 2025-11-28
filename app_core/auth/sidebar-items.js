@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AuthError"],"struct":["AuthService","CreateAccountParams","LoginParams","LoginResult"],"type":["Result"]};

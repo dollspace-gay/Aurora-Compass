@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["blocking","filtering","labels","reporting"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["HttpMethod"],"fn":["network_retry","retry"],"struct":["RetryConfig","XrpcClient","XrpcClientConfig","XrpcError","XrpcErrorResponse","XrpcRequest","XrpcResponse"]};

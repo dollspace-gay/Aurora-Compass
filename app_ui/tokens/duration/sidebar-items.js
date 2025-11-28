@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EXTRA_FAST","EXTRA_SLOW","FAST","INSTANT","MODERATE","NORMAL","SLOW"]};

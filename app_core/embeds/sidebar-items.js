@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["EmbedError","EmbedType","ExternalEmbed","SpotifyEmbedType","YouTubeThumbnailQuality"],"struct":["EmbedDetector","LinkEmbed","SpotifyEmbed","YouTubeEmbed"],"type":["Result"]};

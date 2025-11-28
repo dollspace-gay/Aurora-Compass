@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["NavigationAnimation","NavigationTab","PatternSegment","Route","SearchTab"],"struct":["MatchResult","NavigationStack","NavigationState","PendingNavigation","RoutePattern","Router","StackEntry"],"type":["RouteParams"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PersistenceError"],"fn":["compute_normalized_checksum","verify_checksum_from_file"],"struct":["MigratableState","PersistedState","PersistenceConfig","VersionedState"],"trait":["StateMigration"],"type":["Result"]};

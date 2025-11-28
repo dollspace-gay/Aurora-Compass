@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["APP_NAME","APP_NAME_SHORT","APP_TAGLINE","APP_VERSION","LOGO_PATH"],"mod":["about","colors","copyright","social"]};

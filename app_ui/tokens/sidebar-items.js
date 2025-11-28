@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Breakpoint"],"mod":["aspect_ratio","border","breakpoints","content_width","duration","easing","font_weight","hit_target","line_height","radius","scrollbar","shadows","sizing","spacing","tracking","z_index"],"struct":["Shadow"]};

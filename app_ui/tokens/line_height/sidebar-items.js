@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LOOSE","NONE","NORMAL","RELAXED","SNUG","TIGHT"]};

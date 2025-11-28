@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PostSearchSort","SearchError"],"struct":["ActorSearchParams","ActorSearchResponse","ActorSearchService","ActorTypeaheadParams","ActorTypeaheadResponse","PostSearchParams","PostSearchResponse","PostSearchService","SearchRanking"],"type":["Result"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HAIRLINE","MEDIUM","NONE","THICK","THIN"]};

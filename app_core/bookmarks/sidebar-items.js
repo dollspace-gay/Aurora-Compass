@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PAGE_SIZE"],"enum":["BookmarkError"],"struct":["Bookmark","BookmarkCache","BookmarkService","BookmarkSubject","CreateBookmarkParams","DeleteBookmarkParams","GetBookmarksResponse"],"type":["Result"]};

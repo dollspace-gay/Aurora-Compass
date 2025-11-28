@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["MessagePrivacy"],"fn":["default_true"],"struct":["MessagePreferences","NotificationPreferences","NotificationTypeSettings"]};

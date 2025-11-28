@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["lg","md","none","sm","xl","xs","xxl"]};

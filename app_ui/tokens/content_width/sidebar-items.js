@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EXTRA_WIDE","FULL","NARROW","NORMAL","WIDE"]};

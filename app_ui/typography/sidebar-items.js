@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TextDecoration","TextTransform","TypographyVariant"],"mod":["font_size"],"struct":["FontStack","TextStyle","Typography"]};

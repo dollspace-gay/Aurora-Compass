@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_PAGES","PAGE_SIZE"],"enum":["BlockError"],"struct":["BlockService","BlockedProfileView","BlockedViewerState","CreateRecordResponse","GetBlocksResponse","GetMutesResponse","MutedProfileView","MutedViewerState"],"type":["Result"]};

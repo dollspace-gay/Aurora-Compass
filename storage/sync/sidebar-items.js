@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ConflictStrategy","NetworkState","SyncError","UpdateEvent"],"struct":["StateSync","StateVersion","SyncConfig","SyncedEntry"],"type":["Result"]};

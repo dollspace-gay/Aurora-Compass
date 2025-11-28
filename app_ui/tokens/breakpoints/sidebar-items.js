@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CENTER_COLUMN_OFFSET_MAX","CENTER_COLUMN_OFFSET_MIN","LEFT_NAV_MINIMAL","MOBILE","PHONE","RIGHT_NAV_VISIBLE","TABLET"],"fn":["current","is_gt_mobile","is_gt_phone","is_gt_tablet"]};
