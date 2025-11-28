@@ -144,23 +144,18 @@ impl Default for NotificationTypeSettings {
 }
 
 /// Message privacy settings
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MessagePrivacy {
     /// Anyone can message you
     Everyone,
     /// Only people you follow can message you
+    #[default]
     Following,
     /// Only people in your network (mutual follows) can message you
     Mutuals,
     /// Nobody can message you
     Nobody,
-}
-
-impl Default for MessagePrivacy {
-    fn default() -> Self {
-        MessagePrivacy::Following
-    }
 }
 
 impl MessagePrivacy {
