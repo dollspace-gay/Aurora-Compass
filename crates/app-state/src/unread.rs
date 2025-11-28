@@ -181,7 +181,9 @@ impl UnreadTracker {
 
             // Notify subscribers
             let _ = self.notifications_tx.send(display.clone());
-            let _ = self.events_tx.send(UnreadEvent::NotificationsChanged(display));
+            let _ = self
+                .events_tx
+                .send(UnreadEvent::NotificationsChanged(display));
         }
     }
 
@@ -334,10 +336,7 @@ impl UnreadTracker {
             tracker.polling_active.store(false, Ordering::SeqCst);
         });
 
-        PollingHandle {
-            stop_tx: Some(stop_tx),
-            _handle: handle,
-        }
+        PollingHandle { stop_tx: Some(stop_tx), _handle: handle }
     }
 }
 

@@ -482,11 +482,7 @@ impl AuthService {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn set_app_view_url(
-        &self,
-        did: &str,
-        app_view_url: Option<String>,
-    ) -> Result<()> {
+    pub async fn set_app_view_url(&self, did: &str, app_view_url: Option<String>) -> Result<()> {
         let mut manager = self.session_manager.write().await;
         manager.set_account_app_view(did, app_view_url).await?;
         Ok(())
@@ -607,9 +603,7 @@ impl AuthService {
 
         match result {
             Ok(_) => Ok(()),
-            Err(e) if e.to_string().contains("InvalidToken") => {
-                Err(AuthError::Invalid2FAToken)
-            }
+            Err(e) if e.to_string().contains("InvalidToken") => Err(AuthError::Invalid2FAToken),
             Err(e) => Err(AuthError::Network(e.to_string())),
         }
     }
@@ -679,9 +673,7 @@ impl AuthService {
                 // or when the account is re-loaded from the server
                 Ok(())
             }
-            Err(e) if e.to_string().contains("InvalidToken") => {
-                Err(AuthError::Invalid2FAToken)
-            }
+            Err(e) if e.to_string().contains("InvalidToken") => Err(AuthError::Invalid2FAToken),
             Err(e) => Err(AuthError::Network(e.to_string())),
         }
     }
@@ -813,9 +805,10 @@ impl AuthService {
             "email": email
         });
 
-        let request = atproto_client::xrpc::XrpcRequest::procedure("com.atproto.server.requestPasswordReset")
-            .json_body(&payload)
-            .map_err(|e| AuthError::Network(e.to_string()))?;
+        let request =
+            atproto_client::xrpc::XrpcRequest::procedure("com.atproto.server.requestPasswordReset")
+                .json_body(&payload)
+                .map_err(|e| AuthError::Network(e.to_string()))?;
 
         let _response: atproto_client::xrpc::XrpcResponse<serde_json::Value> = client
             .procedure(request)
@@ -880,9 +873,10 @@ impl AuthService {
             "password": new_password
         });
 
-        let request = atproto_client::xrpc::XrpcRequest::procedure("com.atproto.server.resetPassword")
-            .json_body(&payload)
-            .map_err(|e| AuthError::Network(e.to_string()))?;
+        let request =
+            atproto_client::xrpc::XrpcRequest::procedure("com.atproto.server.resetPassword")
+                .json_body(&payload)
+                .map_err(|e| AuthError::Network(e.to_string()))?;
 
         let _response: atproto_client::xrpc::XrpcResponse<serde_json::Value> = client
             .procedure(request)
@@ -1220,7 +1214,9 @@ mod tests {
         let session_path = temp_dir.path().join("sessions.json");
 
         let auth = AuthService::new(session_path).await.unwrap();
-        let result = auth.verify_email_auth_token("123456", "test@example.com").await;
+        let result = auth
+            .verify_email_auth_token("123456", "test@example.com")
+            .await;
 
         assert!(result.is_err(), "Should fail when no session");
         assert!(
@@ -1327,7 +1323,9 @@ mod tests {
         let auth = AuthService::new(session_path).await.unwrap();
 
         // Setting app view URL for non-existent account should fail
-        let result = auth.set_app_view_url("did:plc:nonexistent", Some("https://custom.app".to_string())).await;
+        let result = auth
+            .set_app_view_url("did:plc:nonexistent", Some("https://custom.app".to_string()))
+            .await;
         assert!(result.is_err(), "Should fail for non-existent account");
 
         // Getting app view URL for non-existent account returns None
@@ -1533,12 +1531,7 @@ mod tests {
 
     #[test]
     fn test_validate_reset_code_mixed_valid() {
-        let codes = vec![
-            "A2B3C-4D5E6",
-            "Z7Y6X-5W4V3",
-            "MIXED-27MIX",
-            "23456-ABCDE",
-        ];
+        let codes = vec!["A2B3C-4D5E6", "Z7Y6X-5W4V3", "MIXED-27MIX", "23456-ABCDE"];
 
         for code in codes {
             let result = AuthService::validate_and_format_reset_code(code);

@@ -32,15 +32,9 @@ impl Default for NotificationPreferences {
         let mut type_settings = HashMap::new();
 
         // Default all notification types to enabled
-        for notif_type in &[
-            "like",
-            "repost",
-            "follow",
-            "mention",
-            "reply",
-            "quote",
-            "starterpack-joined",
-        ] {
+        for notif_type in
+            &["like", "repost", "follow", "mention", "reply", "quote", "starterpack-joined"]
+        {
             type_settings.insert(
                 notif_type.to_string(),
                 NotificationTypeSettings {
@@ -111,7 +105,11 @@ impl NotificationPreferences {
     }
 
     /// Set preferences for a specific notification type
-    pub fn set_type_settings(&mut self, notification_type: String, settings: NotificationTypeSettings) {
+    pub fn set_type_settings(
+        &mut self,
+        notification_type: String,
+        settings: NotificationTypeSettings,
+    ) {
         self.type_settings.insert(notification_type, settings);
     }
 }
@@ -362,22 +360,10 @@ mod tests {
 
     #[test]
     fn test_message_privacy_description() {
-        assert_eq!(
-            MessagePrivacy::Everyone.description(),
-            "Anyone can message you"
-        );
-        assert_eq!(
-            MessagePrivacy::Following.description(),
-            "Only people you follow"
-        );
-        assert_eq!(
-            MessagePrivacy::Mutuals.description(),
-            "Only mutual follows"
-        );
-        assert_eq!(
-            MessagePrivacy::Nobody.description(),
-            "Nobody can message you"
-        );
+        assert_eq!(MessagePrivacy::Everyone.description(), "Anyone can message you");
+        assert_eq!(MessagePrivacy::Following.description(), "Only people you follow");
+        assert_eq!(MessagePrivacy::Mutuals.description(), "Only mutual follows");
+        assert_eq!(MessagePrivacy::Nobody.description(), "Nobody can message you");
     }
 
     #[test]

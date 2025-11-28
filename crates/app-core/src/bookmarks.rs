@@ -261,10 +261,8 @@ impl BookmarkService {
     /// Returns true if the post is now bookmarked, false if unbookmarked.
     pub async fn toggle_bookmark(&self, uri: &str, cid: &str, is_bookmarked: bool) -> Result<bool> {
         if is_bookmarked {
-            self.delete_bookmark(DeleteBookmarkParams {
-                uri: uri.to_string(),
-            })
-            .await?;
+            self.delete_bookmark(DeleteBookmarkParams { uri: uri.to_string() })
+                .await?;
             Ok(false)
         } else {
             self.create_bookmark(CreateBookmarkParams {
@@ -334,9 +332,7 @@ pub struct BookmarkCache {
 impl BookmarkCache {
     /// Create a new empty cache
     pub fn new() -> Self {
-        BookmarkCache {
-            bookmarked_uris: std::collections::HashSet::new(),
-        }
+        BookmarkCache { bookmarked_uris: std::collections::HashSet::new() }
     }
 
     /// Add a bookmark to the cache
@@ -385,10 +381,7 @@ mod tests {
     fn make_bookmark(uri: &str, cid: &str, created_at: &str) -> Bookmark {
         Bookmark {
             created_at: created_at.to_string(),
-            subject: BookmarkSubject {
-                uri: uri.to_string(),
-                cid: cid.to_string(),
-            },
+            subject: BookmarkSubject { uri: uri.to_string(), cid: cid.to_string() },
             item: None,
         }
     }
@@ -401,10 +394,7 @@ mod tests {
             "2024-01-15T10:00:00Z",
         );
 
-        assert_eq!(
-            bookmark.post_uri(),
-            "at://did:plc:abc/app.bsky.feed.post/123"
-        );
+        assert_eq!(bookmark.post_uri(), "at://did:plc:abc/app.bsky.feed.post/123");
         assert_eq!(bookmark.post_cid(), "bafyreib");
     }
 
@@ -433,10 +423,7 @@ mod tests {
         assert!(response.has_more());
         assert_eq!(response.count(), 1);
 
-        let no_more = GetBookmarksResponse {
-            cursor: None,
-            bookmarks: vec![],
-        };
+        let no_more = GetBookmarksResponse { cursor: None, bookmarks: vec![] };
 
         assert!(!no_more.has_more());
         assert_eq!(no_more.count(), 0);

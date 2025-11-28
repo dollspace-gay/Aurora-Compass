@@ -742,18 +742,9 @@ mod tests {
 
     #[test]
     fn test_list_purpose_as_str() {
-        assert_eq!(
-            ListPurpose::Curatelist.as_str(),
-            "app.bsky.graph.defs#curatelist"
-        );
-        assert_eq!(
-            ListPurpose::Modlist.as_str(),
-            "app.bsky.graph.defs#modlist"
-        );
-        assert_eq!(
-            ListPurpose::Referencelist.as_str(),
-            "app.bsky.graph.defs#referencelist"
-        );
+        assert_eq!(ListPurpose::Curatelist.as_str(), "app.bsky.graph.defs#curatelist");
+        assert_eq!(ListPurpose::Modlist.as_str(), "app.bsky.graph.defs#modlist");
+        assert_eq!(ListPurpose::Referencelist.as_str(), "app.bsky.graph.defs#referencelist");
     }
 
     #[test]
@@ -796,10 +787,7 @@ mod tests {
 
     #[test]
     fn test_list_viewer_state_muted() {
-        let state = ListViewerState {
-            muted: Some(true),
-            blocked: None,
-        };
+        let state = ListViewerState { muted: Some(true), blocked: None };
         assert!(state.is_muted());
         assert!(!state.is_blocked());
     }
@@ -863,14 +851,8 @@ mod tests {
 
     #[test]
     fn test_list_purpose_display() {
-        assert_eq!(
-            format!("{}", ListPurpose::Curatelist),
-            "app.bsky.graph.defs#curatelist"
-        );
-        assert_eq!(
-            format!("{}", ListPurpose::Modlist),
-            "app.bsky.graph.defs#modlist"
-        );
+        assert_eq!(format!("{}", ListPurpose::Curatelist), "app.bsky.graph.defs#curatelist");
+        assert_eq!(format!("{}", ListPurpose::Modlist), "app.bsky.graph.defs#modlist");
     }
 
     #[test]

@@ -39,15 +39,10 @@ async fn create_test_session_state() -> (SessionState, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let session_path = temp_dir.path().join("test_sessions.json");
 
-    let session_manager = Arc::new(RwLock::new(
-        SessionManager::new(session_path).await.unwrap(),
-    ));
+    let session_manager = Arc::new(RwLock::new(SessionManager::new(session_path).await.unwrap()));
     let query_client = QueryClient::new(CacheConfig::default()).unwrap();
 
-    (
-        SessionState::new(session_manager, query_client),
-        temp_dir,
-    )
+    (SessionState::new(session_manager, query_client), temp_dir)
 }
 
 /// Test basic account list retrieval
@@ -107,10 +102,7 @@ async fn test_switch_to_nonexistent_account() {
 
     let result = state.switch_account("did:plc:nonexistent").await;
     assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        SessionStateError::SessionManager(_)
-    ));
+    assert!(matches!(result.unwrap_err(), SessionStateError::SessionManager(_)));
 }
 
 /// Test query invalidation logic without actual network switching
@@ -284,9 +276,8 @@ async fn test_account_persistence() {
 
     // Phase 1: Add accounts
     {
-        let session_manager = Arc::new(RwLock::new(
-            SessionManager::new(&session_path).await.unwrap(),
-        ));
+        let session_manager =
+            Arc::new(RwLock::new(SessionManager::new(&session_path).await.unwrap()));
         let query_client = QueryClient::new(CacheConfig::default()).unwrap();
         let state = SessionState::new(session_manager, query_client);
 
@@ -305,9 +296,8 @@ async fn test_account_persistence() {
 
     // Phase 2: Restart and verify persistence
     {
-        let session_manager = Arc::new(RwLock::new(
-            SessionManager::new(&session_path).await.unwrap(),
-        ));
+        let session_manager =
+            Arc::new(RwLock::new(SessionManager::new(&session_path).await.unwrap()));
         let query_client = QueryClient::new(CacheConfig::default()).unwrap();
         let state = SessionState::new(session_manager, query_client);
 

@@ -704,7 +704,7 @@ impl BskyAgent {
     ///
     ///     let image_data = std::fs::read("photo.jpg")?;
     ///     let blob_ref = agent.upload_blob(&image_data, "image/jpeg").await?;
-    ///     println!("Uploaded blob CID: {}", blob_ref.ref_link.link);
+    ///     println!("Uploaded blob CID: {}", blob_ref.ref_link.cid);
     ///
     ///     Ok(())
     /// }

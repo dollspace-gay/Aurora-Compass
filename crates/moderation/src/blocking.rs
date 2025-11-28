@@ -225,9 +225,7 @@ impl BlockService {
     ///
     /// * `client` - XRPC client for making API calls
     pub fn new(client: XrpcClient) -> Self {
-        Self {
-            client: Arc::new(RwLock::new(client)),
-        }
+        Self { client: Arc::new(RwLock::new(client)) }
     }
 
     /// Create a new block service with a shared client
@@ -780,10 +778,7 @@ impl BlockService {
         }
 
         if !did.starts_with("did:") {
-            return Err(BlockError::InvalidDid(format!(
-                "DID must start with 'did:': {}",
-                did
-            )));
+            return Err(BlockError::InvalidDid(format!("DID must start with 'did:': {}", did)));
         }
 
         Ok(())
@@ -892,10 +887,7 @@ mod tests {
             display_name: None,
             avatar: None,
             labels: None,
-            viewer: Some(MutedViewerState {
-                muted: Some(true),
-                muted_by_list: None,
-            }),
+            viewer: Some(MutedViewerState { muted: Some(true), muted_by_list: None }),
         };
 
         let json = serde_json::to_string(&profile).unwrap();
@@ -943,10 +935,7 @@ mod tests {
 
     #[test]
     fn test_get_blocks_response_without_cursor() {
-        let response = GetBlocksResponse {
-            cursor: None,
-            blocks: vec![],
-        };
+        let response = GetBlocksResponse { cursor: None, blocks: vec![] };
 
         let json = serde_json::to_string(&response).unwrap();
         assert!(!json.contains("cursor"));
@@ -1069,12 +1058,13 @@ mod tests {
         let client = XrpcClient::new(config);
         let service = BlockService::new(client);
 
-        let result = service.parse_record_uri(
-            "at://did:plc:test/app.bsky.feed.like/abc",
-            "app.bsky.graph.block",
-        );
+        let result = service
+            .parse_record_uri("at://did:plc:test/app.bsky.feed.like/abc", "app.bsky.graph.block");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Expected collection"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Expected collection"));
     }
 
     #[test]
@@ -1179,10 +1169,7 @@ mod tests {
         assert_eq!(response.cursor, Some("next_page_token".to_string()));
         assert_eq!(response.blocks.len(), 2);
         assert_eq!(response.blocks[0].did, "did:plc:blocked1");
-        assert_eq!(
-            response.blocks[0].display_name,
-            Some("Blocked User 1".to_string())
-        );
+        assert_eq!(response.blocks[0].display_name, Some("Blocked User 1".to_string()));
         assert!(response.blocks[0].viewer.is_some());
         assert!(response.blocks[1].viewer.is_none());
     }
@@ -1289,10 +1276,7 @@ mod tests {
             display_name: None,
             avatar: None,
             labels: None,
-            viewer: Some(MutedViewerState {
-                muted: Some(true),
-                muted_by_list: None,
-            }),
+            viewer: Some(MutedViewerState { muted: Some(true), muted_by_list: None }),
         };
 
         let cloned = profile.clone();

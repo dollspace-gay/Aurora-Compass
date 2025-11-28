@@ -488,7 +488,8 @@ impl AccountStore {
     pub fn import_account_data(&self, export: &AccountDataExport) -> Result<usize> {
         let mut count = 0;
         for (key, value) in &export.data {
-            self.kv.set_scoped(&["account", &export.account_id, key], value)?;
+            self.kv
+                .set_scoped(&["account", &export.account_id, key], value)?;
             count += 1;
         }
         Ok(count)
@@ -499,7 +500,11 @@ impl AccountStore {
     /// Copies all data from `from_account_id` to `to_account_id`.
     /// The source account data is preserved (not deleted).
     /// Returns the number of keys migrated.
-    pub fn migrate_account_data(&self, from_account_id: &str, to_account_id: &str) -> Result<usize> {
+    pub fn migrate_account_data(
+        &self,
+        from_account_id: &str,
+        to_account_id: &str,
+    ) -> Result<usize> {
         let export = self.export_account_data(from_account_id)?;
         let mut migrated_export = export;
         migrated_export.account_id = to_account_id.to_string();
@@ -534,7 +539,8 @@ impl AccountStore {
     /// Useful for removing orphaned data after account deletions.
     /// Returns the number of keys removed.
     pub fn cleanup_orphaned_data(&self, valid_account_ids: &[&str]) -> Result<usize> {
-        let valid_set: std::collections::HashSet<&str> = valid_account_ids.iter().copied().collect();
+        let valid_set: std::collections::HashSet<&str> =
+            valid_account_ids.iter().copied().collect();
         let all_accounts = self.list_accounts()?;
 
         let mut removed_count = 0;
@@ -770,8 +776,7 @@ mod tests {
 
         // Batch get
         let keys = ["name", "email", "active", "nonexistent"];
-        let results: Vec<(String, Option<String>)> =
-            account.get_many("alice", &keys).unwrap();
+        let results: Vec<(String, Option<String>)> = account.get_many("alice", &keys).unwrap();
 
         assert_eq!(results.len(), 4);
         assert_eq!(results[0].1, Some("Alice".to_string()));
@@ -859,7 +864,9 @@ mod tests {
         // Add data for multiple accounts
         account.set("alice", "name", &"Alice".to_string()).unwrap();
         account.set("bob", "name", &"Bob".to_string()).unwrap();
-        account.set("charlie", "name", &"Charlie".to_string()).unwrap();
+        account
+            .set("charlie", "name", &"Charlie".to_string())
+            .unwrap();
 
         // Should list all accounts (sorted)
         let accounts = account.list_accounts().unwrap();
@@ -883,7 +890,9 @@ mod tests {
         account.set("alice", "name", &"Alice".to_string()).unwrap();
         account.set("alice", "age", &30).unwrap();
         account.set("bob", "name", &"Bob".to_string()).unwrap();
-        account.set("charlie", "name", &"Charlie".to_string()).unwrap();
+        account
+            .set("charlie", "name", &"Charlie".to_string())
+            .unwrap();
         account.set("david", "name", &"David".to_string()).unwrap();
 
         // Verify all accounts exist

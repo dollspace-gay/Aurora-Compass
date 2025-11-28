@@ -626,7 +626,9 @@ mod tests {
             .description()
             .contains("spam"));
         assert!(FilterReason::MutedAccount.description().contains("muted"));
-        assert!(FilterReason::BlockedAccount.description().contains("blocked"));
+        assert!(FilterReason::BlockedAccount
+            .description()
+            .contains("blocked"));
     }
 
     // Filter action tests
@@ -657,18 +659,9 @@ mod tests {
 
     #[test]
     fn test_filter_action_more_restrictive() {
-        assert_eq!(
-            FilterAction::Show.more_restrictive(FilterAction::Warn),
-            FilterAction::Warn
-        );
-        assert_eq!(
-            FilterAction::Hide.more_restrictive(FilterAction::Warn),
-            FilterAction::Hide
-        );
-        assert_eq!(
-            FilterAction::Remove.more_restrictive(FilterAction::Hide),
-            FilterAction::Remove
-        );
+        assert_eq!(FilterAction::Show.more_restrictive(FilterAction::Warn), FilterAction::Warn);
+        assert_eq!(FilterAction::Hide.more_restrictive(FilterAction::Warn), FilterAction::Hide);
+        assert_eq!(FilterAction::Remove.more_restrictive(FilterAction::Hide), FilterAction::Remove);
     }
 
     #[test]
@@ -820,8 +813,8 @@ mod tests {
         prefs.mute_word("spoiler").unwrap();
 
         let filter = ContentFilter::with_preferences(prefs);
-        let content = FilterableContent::new("did:plc:author")
-            .with_text("This contains a spoiler alert");
+        let content =
+            FilterableContent::new("did:plc:author").with_text("This contains a spoiler alert");
 
         let result = filter.filter(&content);
         assert!(result.is_removed());
@@ -870,8 +863,7 @@ mod tests {
     fn test_content_filter_no_filter() {
         let prefs = FilterPreferences::new();
         let filter = ContentFilter::with_preferences(prefs);
-        let content = FilterableContent::new("did:plc:author")
-            .with_text("Normal content");
+        let content = FilterableContent::new("did:plc:author").with_text("Normal content");
 
         let result = filter.filter(&content);
         assert!(!result.is_filtered());
@@ -887,8 +879,9 @@ mod tests {
         subs.subscribe("did:plc:labeler");
 
         let mut filter = ContentFilter::new(prefs, subs);
-        filter.label_applicator_mut().add_definitions("did:plc:labeler", vec![
-            LabelDefinition {
+        filter.label_applicator_mut().add_definitions(
+            "did:plc:labeler",
+            vec![LabelDefinition {
                 identifier: "nsfw".to_string(),
                 locales: Some(vec![LabelLocale {
                     lang: "en".to_string(),
@@ -900,8 +893,8 @@ mod tests {
                 applies_to_content: true,
                 default_behavior: LabelBehavior::Hide,
                 user_configurable: true,
-            },
-        ]);
+            }],
+        );
 
         let labels = vec![Label {
             src: "did:plc:labeler".to_string(),
@@ -914,8 +907,7 @@ mod tests {
             sig: None,
         }];
 
-        let content = FilterableContent::new("did:plc:author")
-            .with_labels(&labels);
+        let content = FilterableContent::new("did:plc:author").with_labels(&labels);
 
         let result = filter.filter(&content);
         assert_eq!(result.action, FilterAction::Hide);

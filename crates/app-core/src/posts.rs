@@ -691,9 +691,7 @@ pub struct PostComposer {
 impl PostComposer {
     /// Create a new post composer
     pub fn new(client: XrpcClient) -> Self {
-        Self {
-            client: Arc::new(RwLock::new(client)),
-        }
+        Self { client: Arc::new(RwLock::new(client)) }
     }
 
     /// Create a post with text only
@@ -776,17 +774,11 @@ impl PostComposer {
         langs: Option<Vec<String>>,
     ) -> PostResult<(String, String)> {
         // Validate text length using grapheme count
-        let grapheme_count = unicode_segmentation::UnicodeSegmentation::graphemes(
-            text.text.as_str(),
-            true,
-        )
-        .count();
+        let grapheme_count =
+            unicode_segmentation::UnicodeSegmentation::graphemes(text.text.as_str(), true).count();
 
         if grapheme_count > MAX_POST_LENGTH {
-            return Err(PostError::TextTooLong {
-                actual: grapheme_count,
-                max: MAX_POST_LENGTH,
-            });
+            return Err(PostError::TextTooLong { actual: grapheme_count, max: MAX_POST_LENGTH });
         }
 
         // Check that post has content
@@ -917,10 +909,7 @@ impl PostComposer {
     pub async fn delete_post(&self, uri: &str) -> PostResult<()> {
         // Validate URI format
         if !uri.starts_with("at://") {
-            return Err(PostError::InvalidUri(format!(
-                "URI must start with 'at://': {}",
-                uri
-            )));
+            return Err(PostError::InvalidUri(format!("URI must start with 'at://': {}", uri)));
         }
 
         // Parse the URI to extract repo and rkey
@@ -1272,10 +1261,7 @@ mod tests {
 
     #[test]
     fn test_aspect_ratio() {
-        let ratio = AspectRatio {
-            width: 1920,
-            height: 1080,
-        };
+        let ratio = AspectRatio { width: 1920, height: 1080 };
         assert_eq!(ratio.width, 1920);
         assert_eq!(ratio.height, 1080);
     }
@@ -1287,10 +1273,7 @@ mod tests {
         let embed_image = EmbedImage {
             image: blob_ref.clone(),
             alt: "Test image".to_string(),
-            aspect_ratio: Some(AspectRatio {
-                width: 1920,
-                height: 1080,
-            }),
+            aspect_ratio: Some(AspectRatio { width: 1920, height: 1080 }),
         };
 
         assert_eq!(embed_image.alt, "Test image");
@@ -1320,10 +1303,7 @@ mod tests {
         let embed_image = EmbedImage {
             image: blob_ref,
             alt: "Test alt text".to_string(),
-            aspect_ratio: Some(AspectRatio {
-                width: 1000,
-                height: 500,
-            }),
+            aspect_ratio: Some(AspectRatio { width: 1000, height: 500 }),
         };
 
         let images_embed = ImagesEmbed::new(vec![embed_image]);
@@ -1426,10 +1406,7 @@ mod tests {
 
     #[test]
     fn test_post_error_display() {
-        let err = PostError::TextTooLong {
-            actual: 350,
-            max: 300,
-        };
+        let err = PostError::TextTooLong { actual: 350, max: 300 };
         let msg = err.to_string();
         assert!(msg.contains("350"));
         assert!(msg.contains("300"));
@@ -1550,7 +1527,9 @@ mod tests {
             let composer = PostComposer::new(client);
 
             // Too few parts
-            let result = composer.delete_post("at://did:plc:abc123/app.bsky.feed.post").await;
+            let result = composer
+                .delete_post("at://did:plc:abc123/app.bsky.feed.post")
+                .await;
             assert!(result.is_err());
             assert!(matches!(result.unwrap_err(), PostError::InvalidUri(_)));
 
@@ -1627,10 +1606,7 @@ mod tests {
     fn test_delete_post_error_display() {
         // Test error message formatting for delete-related errors
         let err = PostError::NotFound("at://did:plc:test/app.bsky.feed.post/123".to_string());
-        assert_eq!(
-            err.to_string(),
-            "Post not found: at://did:plc:test/app.bsky.feed.post/123"
-        );
+        assert_eq!(err.to_string(), "Post not found: at://did:plc:test/app.bsky.feed.post/123");
 
         let err = PostError::NotAuthorized;
         assert_eq!(err.to_string(), "Not authorized to delete this post");

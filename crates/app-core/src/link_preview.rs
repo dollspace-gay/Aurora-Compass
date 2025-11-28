@@ -104,9 +104,7 @@ impl LinkPreview {
 
     /// Get display title (title or site name)
     pub fn display_title(&self) -> Option<&str> {
-        self.title
-            .as_deref()
-            .or_else(|| self.site_name.as_deref())
+        self.title.as_deref().or_else(|| self.site_name.as_deref())
     }
 
     /// Get display URL (hostname from final URL or original URL)
@@ -257,9 +255,10 @@ impl MetadataParser {
             if let Some(end) = html_lower[abs_start..].find('>') {
                 let tag = &html[abs_start..abs_start + end];
 
-                if let (Some(property), Some(content)) =
-                    (Self::extract_attribute(tag, "property"), Self::extract_attribute(tag, "content"))
-                {
+                if let (Some(property), Some(content)) = (
+                    Self::extract_attribute(tag, "property"),
+                    Self::extract_attribute(tag, "content"),
+                ) {
                     tags.push((property, content));
                 }
 
@@ -331,10 +330,7 @@ pub struct CachedPreview {
 impl CachedPreview {
     /// Create a new cached preview
     pub fn new(preview: LinkPreview) -> Self {
-        Self {
-            preview,
-            cached_at: std::time::Instant::now(),
-        }
+        Self { preview, cached_at: std::time::Instant::now() }
     }
 
     /// Check if the cached preview has expired
@@ -361,10 +357,7 @@ impl PreviewCache {
 
     /// Create a new preview cache with custom TTL
     pub fn with_ttl(ttl: std::time::Duration) -> Self {
-        Self {
-            cache: HashMap::new(),
-            ttl,
-        }
+        Self { cache: HashMap::new(), ttl }
     }
 
     /// Get a preview from cache
@@ -450,12 +443,10 @@ mod tests {
     #[test]
     fn test_link_preview_truncated_description() {
         let mut preview = LinkPreview::new("https://example.com");
-        preview.description = Some("This is a very long description that should be truncated".to_string());
+        preview.description =
+            Some("This is a very long description that should be truncated".to_string());
 
-        assert_eq!(
-            preview.truncated_description(20),
-            Some("This is a very long ...".to_string())
-        );
+        assert_eq!(preview.truncated_description(20), Some("This is a very long ...".to_string()));
 
         assert_eq!(
             preview.truncated_description(100),
@@ -475,9 +466,15 @@ mod tests {
     #[test]
     fn test_html_metadata_getters() {
         let mut metadata = HtmlMetadata::new();
-        metadata.og.insert("title".to_string(), "OG Title".to_string());
-        metadata.twitter.insert("card".to_string(), "summary".to_string());
-        metadata.meta.insert("description".to_string(), "Meta Description".to_string());
+        metadata
+            .og
+            .insert("title".to_string(), "OG Title".to_string());
+        metadata
+            .twitter
+            .insert("card".to_string(), "summary".to_string());
+        metadata
+            .meta
+            .insert("description".to_string(), "Meta Description".to_string());
 
         assert_eq!(metadata.get_og("title"), Some("OG Title"));
         assert_eq!(metadata.get_twitter("card"), Some("summary"));
@@ -488,10 +485,18 @@ mod tests {
     #[test]
     fn test_metadata_to_preview() {
         let mut metadata = HtmlMetadata::new();
-        metadata.og.insert("title".to_string(), "OG Title".to_string());
-        metadata.og.insert("description".to_string(), "OG Description".to_string());
-        metadata.og.insert("image".to_string(), "https://example.com/image.jpg".to_string());
-        metadata.og.insert("site_name".to_string(), "Example Site".to_string());
+        metadata
+            .og
+            .insert("title".to_string(), "OG Title".to_string());
+        metadata
+            .og
+            .insert("description".to_string(), "OG Description".to_string());
+        metadata
+            .og
+            .insert("image".to_string(), "https://example.com/image.jpg".to_string());
+        metadata
+            .og
+            .insert("site_name".to_string(), "Example Site".to_string());
 
         let preview = metadata.to_preview("https://example.com");
         assert_eq!(preview.url, "https://example.com");
@@ -627,18 +632,19 @@ mod tests {
             Some("www.example.org:8080".to_string())
         );
 
-        assert_eq!(
-            LinkPreview::extract_hostname("not a url"),
-            None
-        );
+        assert_eq!(LinkPreview::extract_hostname("not a url"), None);
     }
 
     #[test]
     fn test_metadata_precedence() {
         let mut metadata = HtmlMetadata::new();
         metadata.title = Some("HTML Title".to_string());
-        metadata.og.insert("title".to_string(), "OG Title".to_string());
-        metadata.twitter.insert("title".to_string(), "Twitter Title".to_string());
+        metadata
+            .og
+            .insert("title".to_string(), "OG Title".to_string());
+        metadata
+            .twitter
+            .insert("title".to_string(), "Twitter Title".to_string());
 
         let preview = metadata.to_preview("https://example.com");
         // OG should take precedence
@@ -649,7 +655,9 @@ mod tests {
     fn test_metadata_fallback() {
         let mut metadata = HtmlMetadata::new();
         metadata.title = Some("HTML Title".to_string());
-        metadata.meta.insert("description".to_string(), "Meta Description".to_string());
+        metadata
+            .meta
+            .insert("description".to_string(), "Meta Description".to_string());
 
         let preview = metadata.to_preview("https://example.com");
         // Should fall back to HTML title when no OG/Twitter

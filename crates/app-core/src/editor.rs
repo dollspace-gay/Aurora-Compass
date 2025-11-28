@@ -59,11 +59,8 @@ impl RichTextEditor {
     /// Creates an editor with initial text
     pub fn with_text(text: impl Into<String>) -> Self {
         let text = text.into();
-        let grapheme_count = unicode_segmentation::UnicodeSegmentation::graphemes(
-            text.as_str(),
-            true,
-        )
-        .count();
+        let grapheme_count =
+            unicode_segmentation::UnicodeSegmentation::graphemes(text.as_str(), true).count();
         Self {
             text: text.clone(),
             cursor: text.len(),
@@ -274,11 +271,8 @@ impl RichTextEditor {
 
     /// Updates the grapheme count after text changes
     fn update_grapheme_count(&mut self) {
-        self.grapheme_count = unicode_segmentation::UnicodeSegmentation::graphemes(
-            self.text.as_str(),
-            true,
-        )
-        .count();
+        self.grapheme_count =
+            unicode_segmentation::UnicodeSegmentation::graphemes(self.text.as_str(), true).count();
     }
 }
 

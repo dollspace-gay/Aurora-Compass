@@ -458,11 +458,7 @@ impl NotificationFilter {
         match self {
             NotificationFilter::All => None,
             NotificationFilter::Mentions => {
-                Some(vec![
-                    "mention".to_string(),
-                    "reply".to_string(),
-                    "quote".to_string(),
-                ])
+                Some(vec!["mention".to_string(), "reply".to_string(), "quote".to_string()])
             }
         }
     }
@@ -494,9 +490,20 @@ pub fn group_notifications(notifications: Vec<Notification>) -> Vec<FeedNotifica
                     if !same_author || is_subscribed {
                         // Check for follow-back (don't group follow-backs)
                         let next_is_follow_back = notif.reason == "follow"
-                            && notif.author.viewer.as_ref().map(|v| v.following.is_some()).unwrap_or(false);
+                            && notif
+                                .author
+                                .viewer
+                                .as_ref()
+                                .map(|v| v.following.is_some())
+                                .unwrap_or(false);
                         let prev_is_follow_back = existing.notification.reason == "follow"
-                            && existing.notification.author.viewer.as_ref().map(|v| v.following.is_some()).unwrap_or(false);
+                            && existing
+                                .notification
+                                .author
+                                .viewer
+                                .as_ref()
+                                .map(|v| v.following.is_some())
+                                .unwrap_or(false);
 
                         if !next_is_follow_back && !prev_is_follow_back {
                             // Add to existing group
@@ -630,7 +637,9 @@ impl NotificationService {
             if let Some(ref uri) = notif.subject_uri {
                 if uri.contains("app.bsky.feed.post") {
                     post_uris.push(uri.clone());
-                } else if notif.notification.reason_subject
+                } else if notif
+                    .notification
+                    .reason_subject
                     .as_ref()
                     .map(|s| s.contains("app.bsky.graph.starterpack"))
                     .unwrap_or(false)
@@ -652,7 +661,8 @@ impl NotificationService {
                 if notif.notification_type == NotificationType::StarterpackJoined {
                     if let Some(ref reason_subject) = notif.notification.reason_subject {
                         if let Some(pack) = packs.get(reason_subject) {
-                            notif.subject = Some(NotificationSubject::StarterPack(Box::new(pack.clone())));
+                            notif.subject =
+                                Some(NotificationSubject::StarterPack(Box::new(pack.clone())));
                         }
                     }
                 } else if let Some(post) = posts.get(uri) {
@@ -724,7 +734,9 @@ impl NotificationService {
 
             match client.query::<serde_json::Value>(request).await {
                 Ok(response) => {
-                    if let Some(packs) = response.data.get("starterPacks").and_then(|p| p.as_array()) {
+                    if let Some(packs) =
+                        response.data.get("starterPacks").and_then(|p| p.as_array())
+                    {
                         for pack_value in packs {
                             if let Ok(pack) =
                                 serde_json::from_value::<StarterPackViewBasic>(pack_value.clone())
@@ -790,9 +802,7 @@ impl NotificationService {
     pub async fn mark_read_until(&self, seen_at: chrono::DateTime<chrono::Utc>) -> Result<()> {
         let client = self.client.read().await;
 
-        let params = UpdateSeenParams {
-            seen_at: seen_at.to_rfc3339(),
-        };
+        let params = UpdateSeenParams { seen_at: seen_at.to_rfc3339() };
 
         let request = XrpcRequest::procedure("app.bsky.notification.updateSeen")
             .json_body(&params)
@@ -820,11 +830,7 @@ impl NotificationService {
         cache.usable_in_feed = true;
 
         // Count unread
-        let unread = page
-            .items
-            .iter()
-            .filter(|n| !n.is_read())
-            .count() as u32;
+        let unread = page.items.iter().filter(|n| !n.is_read()).count() as u32;
 
         cache.unread_count = unread;
         cache.data = Some(page);
@@ -893,34 +899,19 @@ mod tests {
 
     #[test]
     fn test_notification_type_from_reason() {
+        assert_eq!(NotificationType::from_reason("like", None), NotificationType::PostLike);
         assert_eq!(
-            NotificationType::from_reason("like", None),
-            NotificationType::PostLike
-        );
-        assert_eq!(
-            NotificationType::from_reason("like", Some("at://did:plc:abc/app.bsky.feed.generator/xyz")),
+            NotificationType::from_reason(
+                "like",
+                Some("at://did:plc:abc/app.bsky.feed.generator/xyz")
+            ),
             NotificationType::FeedgenLike
         );
-        assert_eq!(
-            NotificationType::from_reason("repost", None),
-            NotificationType::Repost
-        );
-        assert_eq!(
-            NotificationType::from_reason("mention", None),
-            NotificationType::Mention
-        );
-        assert_eq!(
-            NotificationType::from_reason("reply", None),
-            NotificationType::Reply
-        );
-        assert_eq!(
-            NotificationType::from_reason("quote", None),
-            NotificationType::Quote
-        );
-        assert_eq!(
-            NotificationType::from_reason("follow", None),
-            NotificationType::Follow
-        );
+        assert_eq!(NotificationType::from_reason("repost", None), NotificationType::Repost);
+        assert_eq!(NotificationType::from_reason("mention", None), NotificationType::Mention);
+        assert_eq!(NotificationType::from_reason("reply", None), NotificationType::Reply);
+        assert_eq!(NotificationType::from_reason("quote", None), NotificationType::Quote);
+        assert_eq!(NotificationType::from_reason("follow", None), NotificationType::Follow);
         assert_eq!(
             NotificationType::from_reason("starterpack-joined", None),
             NotificationType::StarterpackJoined
@@ -1113,10 +1104,7 @@ mod tests {
                 "cid": "bafyreib"
             }
         });
-        assert_eq!(
-            like.subject_uri(),
-            Some("at://did:plc:abc/app.bsky.feed.post/456".to_string())
-        );
+        assert_eq!(like.subject_uri(), Some("at://did:plc:abc/app.bsky.feed.post/456".to_string()));
     }
 
     #[test]

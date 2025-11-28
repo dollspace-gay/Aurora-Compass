@@ -105,11 +105,7 @@ impl YouTubeEmbed {
 
     /// Get thumbnail URL for a specific quality
     pub fn get_thumbnail(&self, quality: YouTubeThumbnailQuality) -> String {
-        format!(
-            "https://img.youtube.com/vi/{}/{}",
-            self.video_id,
-            quality.filename()
-        )
+        format!("https://img.youtube.com/vi/{}/{}", self.video_id, quality.filename())
     }
 }
 
@@ -202,20 +198,12 @@ impl SpotifyEmbed {
 
     /// Get the embed URL
     pub fn embed_url(&self) -> String {
-        format!(
-            "https://open.spotify.com/embed/{}/{}",
-            self.embed_type.as_str(),
-            self.id
-        )
+        format!("https://open.spotify.com/embed/{}/{}", self.embed_type.as_str(), self.id)
     }
 
     /// Get the open URL
     pub fn open_url(&self) -> String {
-        format!(
-            "https://open.spotify.com/{}/{}",
-            self.embed_type.as_str(),
-            self.id
-        )
+        format!("https://open.spotify.com/{}/{}", self.embed_type.as_str(), self.id)
     }
 }
 
@@ -484,29 +472,20 @@ mod tests {
     fn test_youtube_embed_url_with_start_time() {
         let mut embed = YouTubeEmbed::new("dQw4w9WgXcQ");
         embed.start_time = Some(42);
-        assert_eq!(
-            embed.embed_url(),
-            "https://www.youtube.com/embed/dQw4w9WgXcQ?start=42"
-        );
+        assert_eq!(embed.embed_url(), "https://www.youtube.com/embed/dQw4w9WgXcQ?start=42");
     }
 
     #[test]
     fn test_youtube_watch_url() {
         let embed = YouTubeEmbed::new("dQw4w9WgXcQ");
-        assert_eq!(
-            embed.watch_url(),
-            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        );
+        assert_eq!(embed.watch_url(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     }
 
     #[test]
     fn test_youtube_watch_url_with_start_time() {
         let mut embed = YouTubeEmbed::new("dQw4w9WgXcQ");
         embed.start_time = Some(42);
-        assert_eq!(
-            embed.watch_url(),
-            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s"
-        );
+        assert_eq!(embed.watch_url(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s");
     }
 
     #[test]
@@ -527,7 +506,8 @@ mod tests {
 
     #[test]
     fn test_parse_youtube_standard_url() {
-        let embed = EmbedDetector::parse_youtube("https://www.youtube.com/watch?v=dQw4w9WgXcQ").unwrap();
+        let embed =
+            EmbedDetector::parse_youtube("https://www.youtube.com/watch?v=dQw4w9WgXcQ").unwrap();
         assert_eq!(embed.video_id, "dQw4w9WgXcQ");
     }
 
@@ -539,20 +519,25 @@ mod tests {
 
     #[test]
     fn test_parse_youtube_embed_url() {
-        let embed = EmbedDetector::parse_youtube("https://www.youtube.com/embed/dQw4w9WgXcQ").unwrap();
+        let embed =
+            EmbedDetector::parse_youtube("https://www.youtube.com/embed/dQw4w9WgXcQ").unwrap();
         assert_eq!(embed.video_id, "dQw4w9WgXcQ");
     }
 
     #[test]
     fn test_parse_youtube_with_timestamp() {
-        let embed = EmbedDetector::parse_youtube("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s").unwrap();
+        let embed =
+            EmbedDetector::parse_youtube("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s")
+                .unwrap();
         assert_eq!(embed.video_id, "dQw4w9WgXcQ");
         assert_eq!(embed.start_time, Some(42));
     }
 
     #[test]
     fn test_parse_youtube_with_start_param() {
-        let embed = EmbedDetector::parse_youtube("https://www.youtube.com/watch?v=dQw4w9WgXcQ&start=100").unwrap();
+        let embed =
+            EmbedDetector::parse_youtube("https://www.youtube.com/watch?v=dQw4w9WgXcQ&start=100")
+                .unwrap();
         assert_eq!(embed.video_id, "dQw4w9WgXcQ");
         assert_eq!(embed.start_time, Some(100));
     }
@@ -578,10 +563,7 @@ mod tests {
     #[test]
     fn test_spotify_open_url() {
         let embed = SpotifyEmbed::new(SpotifyEmbedType::Playlist, "37i9dQZF1DXcBWIGoYBM5M");
-        assert_eq!(
-            embed.open_url(),
-            "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
-        );
+        assert_eq!(embed.open_url(), "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M");
     }
 
     #[test]
@@ -593,14 +575,19 @@ mod tests {
 
     #[test]
     fn test_parse_spotify_url_track() {
-        let embed = EmbedDetector::parse_spotify("https://open.spotify.com/track/3n3Ppam7vgaVa1iaRUc9Lp").unwrap();
+        let embed =
+            EmbedDetector::parse_spotify("https://open.spotify.com/track/3n3Ppam7vgaVa1iaRUc9Lp")
+                .unwrap();
         assert_eq!(embed.embed_type, SpotifyEmbedType::Track);
         assert_eq!(embed.id, "3n3Ppam7vgaVa1iaRUc9Lp");
     }
 
     #[test]
     fn test_parse_spotify_url_playlist() {
-        let embed = EmbedDetector::parse_spotify("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M").unwrap();
+        let embed = EmbedDetector::parse_spotify(
+            "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+        )
+        .unwrap();
         assert_eq!(embed.embed_type, SpotifyEmbedType::Playlist);
         assert_eq!(embed.id, "37i9dQZF1DXcBWIGoYBM5M");
     }
@@ -614,7 +601,9 @@ mod tests {
 
     #[test]
     fn test_parse_spotify_album() {
-        let embed = EmbedDetector::parse_spotify("https://open.spotify.com/album/1DFixLWuPkv3KT3TnV35m3").unwrap();
+        let embed =
+            EmbedDetector::parse_spotify("https://open.spotify.com/album/1DFixLWuPkv3KT3TnV35m3")
+                .unwrap();
         assert_eq!(embed.embed_type, SpotifyEmbedType::Album);
         assert_eq!(embed.id, "1DFixLWuPkv3KT3TnV35m3");
     }
@@ -679,10 +668,7 @@ mod tests {
             EmbedDetector::detect("https://open.spotify.com/track/123"),
             Some(EmbedType::Spotify)
         );
-        assert_eq!(
-            EmbedDetector::detect("https://example.com"),
-            Some(EmbedType::Link)
-        );
+        assert_eq!(EmbedDetector::detect("https://example.com"), Some(EmbedType::Link));
     }
 
     #[test]

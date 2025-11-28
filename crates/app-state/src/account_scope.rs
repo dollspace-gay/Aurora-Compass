@@ -122,10 +122,7 @@ impl AccountScopeManager {
     ///
     /// This removes cached data for accounts that no longer exist,
     /// useful for cleanup after account deletion.
-    pub async fn cleanup_orphaned_caches(
-        &self,
-        _valid_dids: &[String],
-    ) -> Result<(), QueryError> {
+    pub async fn cleanup_orphaned_caches(&self, _valid_dids: &[String]) -> Result<(), QueryError> {
         // This is a placeholder implementation
         // In a real implementation, we would need to:
         // 1. Scan all cache keys

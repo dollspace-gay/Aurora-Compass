@@ -168,9 +168,7 @@ pub struct ImageProcessor {
 impl ImageProcessor {
     /// Create a new image processor with default options
     pub fn new() -> Self {
-        Self {
-            options: ImageOptions::default(),
-        }
+        Self { options: ImageOptions::default() }
     }
 
     /// Create an image processor with custom options
@@ -217,14 +215,12 @@ impl ImageProcessor {
         // Validate initial size
         if bytes.len() > MAX_IMAGE_SIZE * 2 {
             // Allow 2x for uncompressed input
-            return Err(MediaError::FileTooLarge {
-                size: bytes.len(),
-                max: MAX_IMAGE_SIZE * 2,
-            });
+            return Err(MediaError::FileTooLarge { size: bytes.len(), max: MAX_IMAGE_SIZE * 2 });
         }
 
         // Load image
-        let img = image::load_from_memory(bytes).map_err(|e| MediaError::DecodeError(e.to_string()))?;
+        let img =
+            image::load_from_memory(bytes).map_err(|e| MediaError::DecodeError(e.to_string()))?;
 
         self.process_image(img)
     }
@@ -242,26 +238,26 @@ impl ImageProcessor {
         }
 
         // Resize if necessary
-        let needs_resize = if let (Some(max_w), Some(max_h)) =
-            (self.options.max_width, self.options.max_height)
-        {
-            width > max_w || height > max_h
-        } else {
-            false
-        };
+        let needs_resize =
+            if let (Some(max_w), Some(max_h)) = (self.options.max_width, self.options.max_height) {
+                width > max_w || height > max_h
+            } else {
+                false
+            };
 
         if needs_resize {
             let max_w = self.options.max_width.unwrap_or(u32::MAX);
             let max_h = self.options.max_height.unwrap_or(u32::MAX);
 
             // Maintain aspect ratio - determine which dimension is the limiting factor
-            let (final_width, final_height) = if width as f32 / max_w as f32 > height as f32 / max_h as f32 {
-                // Width is the limiting factor
-                (max_w, (max_w as f32 / width as f32 * height as f32) as u32)
-            } else {
-                // Height is the limiting factor
-                ((max_h as f32 / height as f32 * width as f32) as u32, max_h)
-            };
+            let (final_width, final_height) =
+                if width as f32 / max_w as f32 > height as f32 / max_h as f32 {
+                    // Width is the limiting factor
+                    (max_w, (max_w as f32 / width as f32 * height as f32) as u32)
+                } else {
+                    // Height is the limiting factor
+                    ((max_h as f32 / height as f32 * width as f32) as u32, max_h)
+                };
 
             img = img.resize(final_width, final_height, self.options.filter);
         }
@@ -290,10 +286,7 @@ impl ImageProcessor {
 
         // Validate final size
         if size > MAX_IMAGE_SIZE {
-            return Err(MediaError::FileTooLarge {
-                size,
-                max: MAX_IMAGE_SIZE,
-            });
+            return Err(MediaError::FileTooLarge { size, max: MAX_IMAGE_SIZE });
         }
 
         let (final_width, final_height) = img.dimensions();
@@ -345,16 +338,10 @@ impl Default for ImageProcessor {
 /// Validate image dimensions
 pub fn validate_dimensions(width: u32, height: u32) -> Result<()> {
     if width > MAX_IMAGE_DIMENSION {
-        return Err(MediaError::DimensionTooLarge {
-            dimension: width,
-            max: MAX_IMAGE_DIMENSION,
-        });
+        return Err(MediaError::DimensionTooLarge { dimension: width, max: MAX_IMAGE_DIMENSION });
     }
     if height > MAX_IMAGE_DIMENSION {
-        return Err(MediaError::DimensionTooLarge {
-            dimension: height,
-            max: MAX_IMAGE_DIMENSION,
-        });
+        return Err(MediaError::DimensionTooLarge { dimension: height, max: MAX_IMAGE_DIMENSION });
     }
     Ok(())
 }
@@ -362,10 +349,7 @@ pub fn validate_dimensions(width: u32, height: u32) -> Result<()> {
 /// Validate image file size
 pub fn validate_size(size: usize) -> Result<()> {
     if size > MAX_IMAGE_SIZE {
-        return Err(MediaError::FileTooLarge {
-            size,
-            max: MAX_IMAGE_SIZE,
-        });
+        return Err(MediaError::FileTooLarge { size, max: MAX_IMAGE_SIZE });
     }
     Ok(())
 }
@@ -392,14 +376,8 @@ mod tests {
 
     #[test]
     fn test_supported_format_from_mime_type() {
-        assert_eq!(
-            SupportedFormat::from_mime_type("image/jpeg").unwrap(),
-            SupportedFormat::Jpeg
-        );
-        assert_eq!(
-            SupportedFormat::from_mime_type("image/png").unwrap(),
-            SupportedFormat::Png
-        );
+        assert_eq!(SupportedFormat::from_mime_type("image/jpeg").unwrap(), SupportedFormat::Jpeg);
+        assert_eq!(SupportedFormat::from_mime_type("image/png").unwrap(), SupportedFormat::Png);
         assert!(SupportedFormat::from_mime_type("image/gif").is_err());
     }
 

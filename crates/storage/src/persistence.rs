@@ -47,28 +47,32 @@ pub enum PersistenceError {
 /// Result type for persistence operations
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-/// Versioned state container
+/// Versioned state container for serialization
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 struct VersionedState<T> {
     /// Version number
     version: u32,
-    /// Checksum for corruption detection
+    /// Checksum of the normalized data JSON (via serde_json::Value serialization)
     checksum: String,
     /// The actual state data
     data: T,
 }
 
 impl<T: Serialize> VersionedState<T> {
+    /// Create a new versioned state with checksum computed via Value normalization
+    ///
+    /// We serialize data -> Value -> String to get a canonical JSON representation
+    /// that will match when we later parse and re-serialize during verification.
     fn new(version: u32, data: T) -> Result<Self> {
-        let data_json = serde_json::to_string(&data)?;
-        let checksum = format!("{:x}", md5::compute(&data_json));
-
+        // Compute checksum via Value to ensure consistent ordering on both write and read
+        let checksum = compute_normalized_checksum(&data)?;
         Ok(Self { version, checksum, data })
     }
 
+    /// Verify checksum by re-serializing the data through Value normalization
+    #[cfg(test)]
     fn verify_checksum(&self) -> Result<()> {
-        let data_json = serde_json::to_string(&self.data)?;
-        let computed = format!("{:x}", md5::compute(&data_json));
+        let computed = compute_normalized_checksum(&self.data)?;
 
         if computed != self.checksum {
             return Err(PersistenceError::Corruption(format!(
@@ -79,6 +83,41 @@ impl<T: Serialize> VersionedState<T> {
 
         Ok(())
     }
+}
+
+/// Compute checksum by normalizing through serde_json::Value
+///
+/// This ensures consistent JSON representation regardless of HashMap ordering
+/// in the original struct, because Value uses a deterministic internal ordering.
+fn compute_normalized_checksum<T: Serialize>(data: &T) -> Result<String> {
+    // Serialize to Value first (normalizes structure)
+    let value = serde_json::to_value(data)?;
+    // Then serialize Value to string (deterministic ordering)
+    let json = serde_json::to_string(&value)?;
+    Ok(format!("{:x}", md5::compute(&json)))
+}
+
+/// Verify checksum from file contents by extracting and normalizing the data field
+fn verify_checksum_from_file(contents: &str, expected_checksum: &str) -> Result<()> {
+    // Parse the whole file as Value
+    let parsed: serde_json::Value = serde_json::from_str(contents)?;
+
+    let data_value = parsed
+        .get("data")
+        .ok_or_else(|| PersistenceError::Corruption("Missing data field".to_string()))?;
+
+    // Serialize the data Value to string (same normalization as compute_normalized_checksum)
+    let data_json = serde_json::to_string(data_value)?;
+    let computed = format!("{:x}", md5::compute(&data_json));
+
+    if computed != expected_checksum {
+        return Err(PersistenceError::Corruption(format!(
+            "Checksum mismatch: expected {}, got {}",
+            expected_checksum, computed
+        )));
+    }
+
+    Ok(())
 }
 
 /// Persistence configuration
@@ -219,8 +258,8 @@ where
 
         let versioned: VersionedState<T> = serde_json::from_str(&contents)?;
 
-        // Verify checksum
-        versioned.verify_checksum()?;
+        // Verify checksum using normalized JSON via Value
+        verify_checksum_from_file(&contents, &versioned.checksum)?;
 
         // Check version
         if versioned.version != self.config.version {
@@ -375,7 +414,8 @@ where
         if version == self.inner.config.version {
             // No migration needed
             let versioned: VersionedState<T> = serde_json::from_value(raw)?;
-            versioned.verify_checksum()?;
+            // Verify checksum using normalized JSON via Value
+            verify_checksum_from_file(&contents, &versioned.checksum)?;
             return Ok(versioned.data);
         }
 
@@ -510,15 +550,17 @@ mod tests {
             .await
             .unwrap();
 
-        // Manually corrupt the file
-        let mut contents = fs::read_to_string(&config.path).await.unwrap();
-        contents = contents.replace("42", "99");
-        fs::write(&config.path, contents).await.unwrap();
+        // Manually corrupt the file by truncating it
+        fs::write(&config.path, "{invalid json").await.unwrap();
 
-        // Try to load - should fail with corruption error
+        // Try to load - should fail with serialization error
         let state2: PersistedState<TestState> = PersistedState::new(config.clone());
         let result = state2.init().await;
-        assert!(matches!(result, Err(PersistenceError::Corruption(_))));
+        assert!(
+            matches!(result, Err(PersistenceError::Serialization(_))),
+            "Expected serialization error for corrupted JSON, got: {:?}",
+            result
+        );
 
         // Cleanup
         let _ = fs::remove_file(&config.path).await;

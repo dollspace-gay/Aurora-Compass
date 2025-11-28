@@ -157,10 +157,7 @@ pub struct SwitchAccountMutation {
 impl SwitchAccountMutation {
     /// Create a new switch account mutation
     pub fn new(session_manager: Arc<RwLock<SessionManager>>, query_client: QueryClient) -> Self {
-        Self {
-            session_manager,
-            query_client,
-        }
+        Self { session_manager, query_client }
     }
 
     /// Execute the mutation to switch accounts
@@ -205,10 +202,7 @@ pub struct AddAccountMutation {
 impl AddAccountMutation {
     /// Create a new add account mutation
     pub fn new(session_manager: Arc<RwLock<SessionManager>>, query_client: QueryClient) -> Self {
-        Self {
-            session_manager,
-            query_client,
-        }
+        Self { session_manager, query_client }
     }
 
     /// Execute the mutation to add an account
@@ -240,10 +234,7 @@ pub struct RemoveAccountMutation {
 impl RemoveAccountMutation {
     /// Create a new remove account mutation
     pub fn new(session_manager: Arc<RwLock<SessionManager>>, query_client: QueryClient) -> Self {
-        Self {
-            session_manager,
-            query_client,
-        }
+        Self { session_manager, query_client }
     }
 
     /// Execute the mutation to remove an account
@@ -284,10 +275,7 @@ impl SessionState {
     /// * `session_manager` - The underlying session manager
     /// * `query_client` - The query client for reactive queries
     pub fn new(session_manager: Arc<RwLock<SessionManager>>, query_client: QueryClient) -> Self {
-        Self {
-            session_manager,
-            query_client,
-        }
+        Self { session_manager, query_client }
     }
 
     /// Get the current session query
@@ -302,10 +290,7 @@ impl SessionState {
 
     /// Get the switch account mutation
     pub fn switch_account_mutation(&self) -> SwitchAccountMutation {
-        SwitchAccountMutation::new(
-            Arc::clone(&self.session_manager),
-            self.query_client.clone(),
-        )
+        SwitchAccountMutation::new(Arc::clone(&self.session_manager), self.query_client.clone())
     }
 
     /// Get the add account mutation
@@ -315,10 +300,7 @@ impl SessionState {
 
     /// Get the remove account mutation
     pub fn remove_account_mutation(&self) -> RemoveAccountMutation {
-        RemoveAccountMutation::new(
-            Arc::clone(&self.session_manager),
-            self.query_client.clone(),
-        )
+        RemoveAccountMutation::new(Arc::clone(&self.session_manager), self.query_client.clone())
     }
 
     /// Get the current session data
@@ -403,9 +385,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let session_path = temp_dir.path().join("test_sessions.json");
 
-        let session_manager = Arc::new(RwLock::new(
-            SessionManager::new(session_path).await.unwrap(),
-        ));
+        let session_manager =
+            Arc::new(RwLock::new(SessionManager::new(session_path).await.unwrap()));
         let query_client = QueryClient::new(CacheConfig::default()).unwrap();
 
         (SessionState::new(session_manager, query_client), temp_dir)

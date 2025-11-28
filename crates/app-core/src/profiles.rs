@@ -408,10 +408,7 @@ pub struct KnownFollowersParams {
 impl KnownFollowersParams {
     /// Create new parameters with default values
     pub fn new() -> Self {
-        Self {
-            cursor: None,
-            limit: 50,
-        }
+        Self { cursor: None, limit: 50 }
     }
 
     /// Set the pagination cursor
@@ -461,7 +458,7 @@ pub struct KnownFollowersResponse {
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     // Create XRPC client (with auth)
 ///     let config = XrpcClientConfig::new("https://bsky.social");
-///     let client = XrpcClient::new(client);
+///     let client = XrpcClient::new(config);
 ///     let service = ProfileService::new(client);
 ///
 ///     // Fetch a profile
@@ -682,7 +679,10 @@ impl ProfileService {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn get_suggested_follows(&self, params: SuggestedFollowsParams) -> Result<SuggestedFollowsResponse> {
+    pub async fn get_suggested_follows(
+        &self,
+        params: SuggestedFollowsParams,
+    ) -> Result<SuggestedFollowsResponse> {
         let mut request = XrpcRequest::query("app.bsky.actor.getSuggestions")
             .param("limit", params.limit.to_string());
 
@@ -741,7 +741,10 @@ impl ProfileService {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn get_suggested_follows_by_actor(&self, actor: &str) -> Result<SuggestedFollowsByActorResponse> {
+    pub async fn get_suggested_follows_by_actor(
+        &self,
+        actor: &str,
+    ) -> Result<SuggestedFollowsByActorResponse> {
         let request = XrpcRequest::query("app.bsky.graph.getSuggestedFollowsByActor")
             .param("actor", actor.to_string());
 
@@ -796,7 +799,11 @@ impl ProfileService {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn get_known_followers(&self, actor: &str, params: KnownFollowersParams) -> Result<KnownFollowersResponse> {
+    pub async fn get_known_followers(
+        &self,
+        actor: &str,
+        params: KnownFollowersParams,
+    ) -> Result<KnownFollowersResponse> {
         let mut request = XrpcRequest::query("app.bsky.graph.getKnownFollowers")
             .param("actor", actor.to_string())
             .param("limit", params.limit.to_string());
@@ -1178,10 +1185,7 @@ mod tests {
 
         assert_eq!(update.repo, "did:plc:test123");
         assert_eq!(update.display_name, Some("Alice Smith".to_string()));
-        assert_eq!(
-            update.description,
-            Some("Software engineer and coffee enthusiast".to_string())
-        );
+        assert_eq!(update.description, Some("Software engineer and coffee enthusiast".to_string()));
         assert!(update.avatar.is_none());
         assert!(update.banner.is_none());
     }
@@ -1351,8 +1355,7 @@ mod tests {
 
     #[test]
     fn test_suggested_follows_params_with_cursor() {
-        let params = SuggestedFollowsParams::new()
-            .with_cursor("cursor123".to_string());
+        let params = SuggestedFollowsParams::new().with_cursor("cursor123".to_string());
         assert_eq!(params.cursor, Some("cursor123".to_string()));
     }
 
@@ -1428,10 +1431,7 @@ mod tests {
 
     #[test]
     fn test_suggested_follows_response_without_cursor() {
-        let response = SuggestedFollowsResponse {
-            actors: vec![],
-            cursor: None,
-        };
+        let response = SuggestedFollowsResponse { actors: vec![], cursor: None };
 
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("actors"));
@@ -1480,11 +1480,7 @@ mod tests {
 
     #[test]
     fn test_suggested_follows_params_multiple_interests() {
-        let interests = vec![
-            "tech".to_string(),
-            "programming".to_string(),
-            "rust".to_string(),
-        ];
+        let interests = vec!["tech".to_string(), "programming".to_string(), "rust".to_string()];
         let params = SuggestedFollowsParams::new().with_interests(interests.clone());
         assert_eq!(params.interests, Some(interests));
     }

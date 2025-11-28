@@ -804,13 +804,17 @@ mod tests {
 
         // Work account uses Spanish
         assert_eq!(
-            state.get_language_prefs_for_account(Some("did:plc:work")).primary_language,
+            state
+                .get_language_prefs_for_account(Some("did:plc:work"))
+                .primary_language,
             "es"
         );
 
         // Other accounts use English
         assert_eq!(
-            state.get_language_prefs_for_account(Some("did:plc:personal")).primary_language,
+            state
+                .get_language_prefs_for_account(Some("did:plc:personal"))
+                .primary_language,
             "en"
         );
     }
@@ -887,10 +891,7 @@ mod tests {
         let deserialized: AppPersistedState = serde_json::from_str(&json).unwrap();
 
         // Verify preferences survived round-trip
-        assert_eq!(
-            deserialized.get_color_mode_for_account(Some("did:plc:work")),
-            ColorMode::Dark
-        );
+        assert_eq!(deserialized.get_color_mode_for_account(Some("did:plc:work")), ColorMode::Dark);
         assert_eq!(deserialized.get_font_size_for_account(Some("did:plc:work")), 1.2);
     }
 

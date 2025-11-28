@@ -1377,10 +1377,7 @@ impl HashtagFeed {
             })
             .collect();
 
-        Ok(FeedResponse {
-            cursor: search_response.cursor,
-            feed,
-        })
+        Ok(FeedResponse { cursor: search_response.cursor, feed })
     }
 
     /// Peek at the latest post for a hashtag without affecting pagination
@@ -1453,11 +1450,7 @@ impl ListFeedParams {
     /// assert_eq!(params.limit, 50);
     /// ```
     pub fn new(list: impl Into<String>) -> Self {
-        Self {
-            list: list.into(),
-            cursor: None,
-            limit: 50,
-        }
+        Self { list: list.into(), cursor: None, limit: 50 }
     }
 
     /// Set the pagination cursor
@@ -1630,11 +1623,7 @@ impl ListFeed {
     /// # }
     /// ```
     pub async fn peek_latest(&self, list_uri: impl Into<String>) -> Result<Option<FeedViewPost>> {
-        let params = ListFeedParams {
-            list: list_uri.into(),
-            cursor: None,
-            limit: 1,
-        };
+        let params = ListFeedParams { list: list_uri.into(), cursor: None, limit: 1 };
 
         let response = self.fetch(params).await?;
         Ok(response.feed.into_iter().next())
@@ -1671,11 +1660,7 @@ impl ListFeed {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn has_new_posts(
-        &self,
-        list_uri: impl Into<String>,
-        since: &str,
-    ) -> Result<bool> {
+    pub async fn has_new_posts(&self, list_uri: impl Into<String>, since: &str) -> Result<bool> {
         if let Some(latest) = self.peek_latest(list_uri).await? {
             Ok(latest.post.indexed_at.as_str() > since)
         } else {
@@ -1977,7 +1962,9 @@ mod tests {
 
     #[test]
     fn test_feed_view_preferences_filter_posts_batch() {
-        let prefs = FeedViewPreferences::new().with_replies_hidden().with_reposts_hidden();
+        let prefs = FeedViewPreferences::new()
+            .with_replies_hidden()
+            .with_reposts_hidden();
 
         let posts = vec![
             create_test_feed_post("post1", "did:plc:abc"),
@@ -1985,7 +1972,10 @@ mod tests {
                 post: create_test_post("post2", "did:plc:abc"),
                 reply: Some(ReplyRef {
                     root: ReplyRefPost::PostView(Box::new(create_test_post("root", "did:plc:abc"))),
-                    parent: ReplyRefPost::PostView(Box::new(create_test_post("parent", "did:plc:abc"))),
+                    parent: ReplyRefPost::PostView(Box::new(create_test_post(
+                        "parent",
+                        "did:plc:abc",
+                    ))),
                     grandparent_author: None,
                 }),
                 reason: None,
@@ -2102,7 +2092,10 @@ mod tests {
                 post: create_test_post("post2", "did:plc:abc"),
                 reply: Some(ReplyRef {
                     root: ReplyRefPost::PostView(Box::new(create_test_post("root", "did:plc:abc"))),
-                    parent: ReplyRefPost::PostView(Box::new(create_test_post("parent", "did:plc:abc"))),
+                    parent: ReplyRefPost::PostView(Box::new(create_test_post(
+                        "parent",
+                        "did:plc:abc",
+                    ))),
                     grandparent_author: None,
                 }),
                 reason: None,
@@ -2222,15 +2215,15 @@ mod tests {
 
     #[test]
     fn test_list_feed_params_with_limit() {
-        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
-            .with_limit(25);
+        let params =
+            ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech").with_limit(25);
         assert_eq!(params.limit, 25);
     }
 
     #[test]
     fn test_list_feed_params_limit_capped() {
-        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
-            .with_limit(150);
+        let params =
+            ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech").with_limit(150);
         assert_eq!(params.limit, 100);
     }
 
@@ -2256,8 +2249,8 @@ mod tests {
 
     #[test]
     fn test_list_feed_params_clone() {
-        let params1 = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
-            .with_limit(40);
+        let params1 =
+            ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech").with_limit(40);
         let params2 = params1.clone();
 
         assert_eq!(params1.list, params2.list);
@@ -2292,18 +2285,17 @@ mod tests {
     #[test]
     fn test_list_feed_params_limits() {
         // Zero should become zero (edge case)
-        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
-            .with_limit(0);
+        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech").with_limit(0);
         assert_eq!(params.limit, 0);
 
         // Max allowed
-        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
-            .with_limit(100);
+        let params =
+            ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech").with_limit(100);
         assert_eq!(params.limit, 100);
 
         // Over max should cap at 100
-        let params = ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech")
-            .with_limit(1000);
+        let params =
+            ListFeedParams::new("at://did:plc:abc/app.bsky.graph.list/tech").with_limit(1000);
         assert_eq!(params.limit, 100);
     }
 
@@ -2414,8 +2406,7 @@ mod tests {
 
     #[test]
     fn test_hashtag_feed_params_with_cursor() {
-        let params = HashtagFeedParams::new("rust")
-            .with_cursor(Some("cursor123".to_string()));
+        let params = HashtagFeedParams::new("rust").with_cursor(Some("cursor123".to_string()));
         assert_eq!(params.cursor, Some("cursor123".to_string()));
     }
 
@@ -2434,8 +2425,7 @@ mod tests {
 
     #[test]
     fn test_hashtag_feed_params_with_sort() {
-        let params = HashtagFeedParams::new("rust")
-            .with_sort(HashtagFeedSort::Latest);
+        let params = HashtagFeedParams::new("rust").with_sort(HashtagFeedSort::Latest);
         assert_eq!(params.sort, HashtagFeedSort::Latest);
     }
 
@@ -2685,7 +2675,7 @@ pub enum PinnedFeedsError {
 ///
 /// ```
 /// # use app_core::feeds::PinnedFeedsManager;
-/// let manager = PinnedFeedsManager::new();
+/// let mut manager = PinnedFeedsManager::new();
 /// // Pin a feed
 /// manager.pin("at://did:plc:abc/app.bsky.feed.generator/tech")?;
 /// // Check if pinned
@@ -2729,10 +2719,7 @@ impl PinnedFeedsManager {
     /// let manager = PinnedFeedsManager::with_max(10);
     /// ```
     pub fn with_max(max_pinned: usize) -> Self {
-        Self {
-            pinned_uris: Vec::new(),
-            max_pinned,
-        }
+        Self { pinned_uris: Vec::new(), max_pinned }
     }
 
     /// Create a manager from existing pinned feeds
@@ -3046,7 +3033,9 @@ impl PinnedFeedsManager {
     /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
     /// ```
     pub fn move_up(&mut self, uri: &str) -> PinnedFeedsResult<()> {
-        let pos = self.position(uri).ok_or_else(|| PinnedFeedsError::NotPinned(uri.to_string()))?;
+        let pos = self
+            .position(uri)
+            .ok_or_else(|| PinnedFeedsError::NotPinned(uri.to_string()))?;
 
         if pos > 0 {
             self.reorder(pos, pos - 1)?;
@@ -3075,7 +3064,9 @@ impl PinnedFeedsManager {
     /// # Ok::<(), app_core::feeds::PinnedFeedsError>(())
     /// ```
     pub fn move_down(&mut self, uri: &str) -> PinnedFeedsResult<()> {
-        let pos = self.position(uri).ok_or_else(|| PinnedFeedsError::NotPinned(uri.to_string()))?;
+        let pos = self
+            .position(uri)
+            .ok_or_else(|| PinnedFeedsError::NotPinned(uri.to_string()))?;
 
         if pos < self.pinned_uris.len() - 1 {
             self.reorder(pos, pos + 1)?;

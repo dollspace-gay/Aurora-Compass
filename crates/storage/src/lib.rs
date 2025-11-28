@@ -15,9 +15,6 @@ pub mod preferences;
 pub mod sync;
 
 pub use app_state::{AppPersistedState, ColorMode, LanguagePrefs, OnboardingState};
-pub use preferences::{
-    MessagePreferences, MessagePrivacy, NotificationPreferences, NotificationTypeSettings,
-};
 pub use cache::{CacheConfig, CacheError, DiskCache, MemoryCache, TieredCache};
 pub use database::{
     Database, DatabaseConfig, DatabaseError, DatabaseTransaction, MigrationDefinition,
@@ -26,5 +23,8 @@ pub use database::{
 pub use kv::{AccountStore, CompareAndSwapError, DeviceStore, KvConfig, KvError, KvStore};
 pub use persistence::{
     MigratableState, PersistedState, PersistenceConfig, PersistenceError, StateMigration,
+};
+pub use preferences::{
+    MessagePreferences, MessagePrivacy, NotificationPreferences, NotificationTypeSettings,
 };
 pub use sync::{ConflictStrategy, NetworkState, StateSync, SyncConfig, SyncError, UpdateEvent};

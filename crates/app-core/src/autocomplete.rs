@@ -127,10 +127,7 @@ struct CacheEntry {
 
 impl CacheEntry {
     fn new(results: Vec<AutocompleteResult>) -> Self {
-        Self {
-            results,
-            timestamp: Instant::now(),
-        }
+        Self { results, timestamp: Instant::now() }
     }
 
     fn is_expired(&self) -> bool {
@@ -153,12 +150,13 @@ struct ActorSearchResponse {
 /// ```rust,no_run
 /// use app_core::autocomplete::AutocompleteService;
 /// use app_core::editor::{RichTextEditor, SuggestionType, AutocompleteSuggestion};
-/// use atproto_client::xrpc::XrpcClient;
+/// use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
 /// use std::sync::Arc;
 /// use tokio::sync::RwLock;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let client = Arc::new(RwLock::new(XrpcClient::new("https://bsky.social")?));
+/// let config = XrpcClientConfig::new("https://bsky.social");
+/// let client = Arc::new(RwLock::new(XrpcClient::new(config)));
 /// let service = AutocompleteService::new(client);
 ///
 /// let suggestion = AutocompleteSuggestion {
@@ -195,11 +193,12 @@ impl AutocompleteService {
     /// ```rust,no_run
     /// # use app_core::autocomplete::AutocompleteService;
     /// # use app_core::editor::{AutocompleteSuggestion, SuggestionType};
-    /// # use atproto_client::xrpc::XrpcClient;
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
     /// # use std::sync::Arc;
     /// # use tokio::sync::RwLock;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = Arc::new(RwLock::new(XrpcClient::new("https://bsky.social")?));
+    /// # let config = XrpcClientConfig::new("https://bsky.social");
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
     /// # let service = AutocompleteService::new(client);
     /// let suggestion = AutocompleteSuggestion {
     ///     suggestion_type: SuggestionType::Mention,
@@ -211,7 +210,10 @@ impl AutocompleteService {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn search(&self, suggestion: &AutocompleteSuggestion) -> Result<Vec<AutocompleteResult>> {
+    pub async fn search(
+        &self,
+        suggestion: &AutocompleteSuggestion,
+    ) -> Result<Vec<AutocompleteResult>> {
         // Check cache first
         let cache_key = format!("{:?}:{}", suggestion.suggestion_type, suggestion.query);
 
@@ -243,11 +245,12 @@ impl AutocompleteService {
     ///
     /// ```rust,no_run
     /// # use app_core::autocomplete::AutocompleteService;
-    /// # use atproto_client::xrpc::XrpcClient;
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
     /// # use std::sync::Arc;
     /// # use tokio::sync::RwLock;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = Arc::new(RwLock::new(XrpcClient::new("https://bsky.social")?));
+    /// # let config = XrpcClientConfig::new("https://bsky.social");
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
     /// # let service = AutocompleteService::new(client);
     /// let results = service.search_actors("alice").await?;
     /// for result in results {
@@ -263,9 +266,7 @@ impl AutocompleteService {
 
         // Validate query length (AT Protocol limit)
         if query.len() > 100 {
-            return Err(AutocompleteError::InvalidQuery(
-                "Query too long".to_string(),
-            ));
+            return Err(AutocompleteError::InvalidQuery("Query too long".to_string()));
         }
 
         let client = self.client.read().await;
@@ -291,11 +292,12 @@ impl AutocompleteService {
     ///
     /// ```rust,no_run
     /// # use app_core::autocomplete::AutocompleteService;
-    /// # use atproto_client::xrpc::XrpcClient;
+    /// # use atproto_client::xrpc::{XrpcClient, XrpcClientConfig};
     /// # use std::sync::Arc;
     /// # use tokio::sync::RwLock;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = Arc::new(RwLock::new(XrpcClient::new("https://bsky.social")?));
+    /// # let config = XrpcClientConfig::new("https://bsky.social");
+    /// # let client = Arc::new(RwLock::new(XrpcClient::new(config)));
     /// # let service = AutocompleteService::new(client);
     /// let results = service.search_hashtags("rust").await?;
     /// for result in results {
@@ -311,17 +313,16 @@ impl AutocompleteService {
 
         // Validate query length
         if query.len() > 100 {
-            return Err(AutocompleteError::InvalidQuery(
-                "Query too long".to_string(),
-            ));
+            return Err(AutocompleteError::InvalidQuery("Query too long".to_string()));
         }
 
         let client = self.client.read().await;
 
         // Use app.bsky.unspecced.getTaggedSuggestions for hashtag search
-        let request = atproto_client::xrpc::XrpcRequest::query("app.bsky.unspecced.getTaggedSuggestions")
-            .param("q", query)
-            .param("limit", MAX_AUTOCOMPLETE_RESULTS.to_string());
+        let request =
+            atproto_client::xrpc::XrpcRequest::query("app.bsky.unspecced.getTaggedSuggestions")
+                .param("q", query)
+                .param("limit", MAX_AUTOCOMPLETE_RESULTS.to_string());
 
         // Define a simple response type for hashtag suggestions
         #[derive(Deserialize)]
@@ -333,14 +334,12 @@ impl AutocompleteService {
 
         // If the endpoint doesn't exist or fails, return local suggestions
         match response {
-            Ok(data) => {
-                Ok(data
-                    .data
-                    .suggestions
-                    .into_iter()
-                    .map(AutocompleteResult::Hashtag)
-                    .collect())
-            }
+            Ok(data) => Ok(data
+                .data
+                .suggestions
+                .into_iter()
+                .map(AutocompleteResult::Hashtag)
+                .collect()),
             Err(_) => {
                 // Fallback to local suggestions
                 Ok(self.get_local_hashtag_suggestions(query))
@@ -352,10 +351,26 @@ impl AutocompleteService {
     fn get_local_hashtag_suggestions(&self, query: &str) -> Vec<AutocompleteResult> {
         // Common hashtags that match the query
         let common_tags = [
-            "rust", "rustlang", "programming", "coding", "developer",
-            "software", "tech", "technology", "opensource", "github",
-            "bluesky", "atproto", "web3", "decentralized", "social",
-            "art", "photography", "music", "news", "politics",
+            "rust",
+            "rustlang",
+            "programming",
+            "coding",
+            "developer",
+            "software",
+            "tech",
+            "technology",
+            "opensource",
+            "github",
+            "bluesky",
+            "atproto",
+            "web3",
+            "decentralized",
+            "social",
+            "art",
+            "photography",
+            "music",
+            "news",
+            "politics",
         ];
 
         common_tags
@@ -363,10 +378,7 @@ impl AutocompleteService {
             .filter(|tag| tag.starts_with(query))
             .take(MAX_AUTOCOMPLETE_RESULTS)
             .map(|tag| {
-                AutocompleteResult::Hashtag(HashtagSuggestion {
-                    tag: tag.to_string(),
-                    count: None,
-                })
+                AutocompleteResult::Hashtag(HashtagSuggestion { tag: tag.to_string(), count: None })
             })
             .collect()
     }
@@ -409,10 +421,7 @@ mod tests {
 
     #[test]
     fn test_hashtag_suggestion() {
-        let tag = HashtagSuggestion {
-            tag: "rust".to_string(),
-            count: Some(12345),
-        };
+        let tag = HashtagSuggestion { tag: "rust".to_string(), count: Some(12345) };
 
         assert_eq!(tag.tag, "rust");
         assert_eq!(tag.count, Some(12345));
@@ -456,10 +465,8 @@ mod tests {
 
     #[test]
     fn test_autocomplete_result_display_text_hashtag_no_count() {
-        let result = AutocompleteResult::Hashtag(HashtagSuggestion {
-            tag: "rust".to_string(),
-            count: None,
-        });
+        let result =
+            AutocompleteResult::Hashtag(HashtagSuggestion { tag: "rust".to_string(), count: None });
 
         assert_eq!(result.display_text(), "#rust");
     }
@@ -499,10 +506,8 @@ mod tests {
 
         assert_eq!(mention.did(), Some("did:plc:test123"));
 
-        let hashtag = AutocompleteResult::Hashtag(HashtagSuggestion {
-            tag: "rust".to_string(),
-            count: None,
-        });
+        let hashtag =
+            AutocompleteResult::Hashtag(HashtagSuggestion { tag: "rust".to_string(), count: None });
 
         assert_eq!(hashtag.did(), None);
     }
@@ -569,10 +574,7 @@ mod tests {
         assert!(!results.is_empty());
 
         // Should include "rust" and "rustlang"
-        let tags: Vec<String> = results
-            .iter()
-            .map(|r| r.completion_value())
-            .collect();
+        let tags: Vec<String> = results.iter().map(|r| r.completion_value()).collect();
 
         assert!(tags.contains(&"rust".to_string()));
         assert!(tags.contains(&"rustlang".to_string()));
@@ -595,10 +597,7 @@ mod tests {
         // Add something to cache
         {
             let mut cache = service.cache.write().await;
-            cache.insert(
-                "test".to_string(),
-                CacheEntry::new(vec![]),
-            );
+            cache.insert("test".to_string(), CacheEntry::new(vec![]));
         }
 
         assert_eq!(service.cache.read().await.len(), 1);
@@ -615,10 +614,7 @@ mod tests {
         // Add fresh entry
         {
             let mut cache = service.cache.write().await;
-            cache.insert(
-                "fresh".to_string(),
-                CacheEntry::new(vec![]),
-            );
+            cache.insert("fresh".to_string(), CacheEntry::new(vec![]));
         }
 
         service.cleanup_cache().await;

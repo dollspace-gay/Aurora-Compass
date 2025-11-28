@@ -623,10 +623,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_query_retry() {
-        let config = CacheConfig {
-            max_entries: 1000,
-            ..Default::default()
-        };
+        let config = CacheConfig { max_entries: 1000, ..Default::default() };
 
         let client = QueryClient::new(config).unwrap();
         let query = TestQuery {

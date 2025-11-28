@@ -156,11 +156,9 @@ impl Conversation {
 
     /// Get the other participant's display name (for 1-on-1 chats)
     pub fn other_participant_name(&self) -> Option<String> {
-        self.members.first().and_then(|m| {
-            m.display_name
-                .clone()
-                .or_else(|| Some(m.handle.clone()))
-        })
+        self.members
+            .first()
+            .and_then(|m| m.display_name.clone().or_else(|| Some(m.handle.clone())))
     }
 
     /// Check if this conversation has unread messages
@@ -287,9 +285,7 @@ pub struct ConversationService {
 impl ConversationService {
     /// Create a new conversation service
     pub fn new(client: XrpcClient) -> Self {
-        Self {
-            client: Arc::new(RwLock::new(client)),
-        }
+        Self { client: Arc::new(RwLock::new(client)) }
     }
 
     /// List all conversations for the current user
@@ -332,10 +328,7 @@ impl ConversationService {
     /// # Returns
     ///
     /// List of messages with pagination cursor
-    pub async fn list_messages(
-        &self,
-        params: ListMessagesParams,
-    ) -> Result<ListMessagesResponse> {
+    pub async fn list_messages(&self, params: ListMessagesParams) -> Result<ListMessagesResponse> {
         let mut request = XrpcRequest::query("chat.bsky.convo.getMessages")
             .param("convoId", params.conversation_id);
 
@@ -431,19 +424,14 @@ impl ConversationService {
     /// # Arguments
     ///
     /// * `conversation_id` - ID of the conversation to mark as read
-    pub async fn mark_conversation_read(
-        &self,
-        conversation_id: impl Into<String>,
-    ) -> Result<()> {
+    pub async fn mark_conversation_read(&self, conversation_id: impl Into<String>) -> Result<()> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct MarkReadRequest {
             conversation_id: String,
         }
 
-        let request_body = MarkReadRequest {
-            conversation_id: conversation_id.into(),
-        };
+        let request_body = MarkReadRequest { conversation_id: conversation_id.into() };
 
         let request = XrpcRequest::procedure("chat.bsky.convo.updateRead")
             .json_body(&request_body)
@@ -470,9 +458,7 @@ impl ConversationService {
             conversation_id: String,
         }
 
-        let request_body = MuteRequest {
-            conversation_id: conversation_id.into(),
-        };
+        let request_body = MuteRequest { conversation_id: conversation_id.into() };
 
         let request = XrpcRequest::procedure("chat.bsky.convo.muteConvo")
             .json_body(&request_body)
@@ -499,9 +485,7 @@ impl ConversationService {
             conversation_id: String,
         }
 
-        let request_body = UnmuteRequest {
-            conversation_id: conversation_id.into(),
-        };
+        let request_body = UnmuteRequest { conversation_id: conversation_id.into() };
 
         let request = XrpcRequest::procedure("chat.bsky.convo.unmuteConvo")
             .json_body(&request_body)
@@ -624,8 +608,14 @@ impl InboxView {
             }
             ConversationSortBy::Name => {
                 self.conversations.sort_by(|a, b| {
-                    let name_a = a.other_participant_name().unwrap_or_default().to_lowercase();
-                    let name_b = b.other_participant_name().unwrap_or_default().to_lowercase();
+                    let name_a = a
+                        .other_participant_name()
+                        .unwrap_or_default()
+                        .to_lowercase();
+                    let name_b = b
+                        .other_participant_name()
+                        .unwrap_or_default()
+                        .to_lowercase();
                     name_a.cmp(&name_b)
                 });
             }
@@ -681,11 +671,7 @@ impl InboxView {
     /// Get inbox statistics
     pub fn stats(&self) -> InboxStats {
         let total_conversations = self.conversations.len();
-        let unread_conversations = self
-            .conversations
-            .iter()
-            .filter(|c| c.has_unread())
-            .count();
+        let unread_conversations = self.conversations.iter().filter(|c| c.has_unread()).count();
         let total_unread = self.conversations.iter().map(|c| c.unread_count).sum();
 
         InboxStats {
@@ -702,12 +688,18 @@ impl InboxView {
 
     /// Get only unread conversations
     pub fn unread_conversations(&self) -> Vec<&Conversation> {
-        self.conversations.iter().filter(|c| c.has_unread()).collect()
+        self.conversations
+            .iter()
+            .filter(|c| c.has_unread())
+            .collect()
     }
 
     /// Get only read conversations
     pub fn read_conversations(&self) -> Vec<&Conversation> {
-        self.conversations.iter().filter(|c| !c.has_unread()).collect()
+        self.conversations
+            .iter()
+            .filter(|c| !c.has_unread())
+            .collect()
     }
 }
 
@@ -867,19 +859,13 @@ impl MessageEvent {
     }
 
     /// Create a new message event with message data
-    pub fn with_message(
-        mut self,
-        message: Message,
-    ) -> Self {
+    pub fn with_message(mut self, message: Message) -> Self {
         self.message = Some(message);
         self
     }
 
     /// Create a new message event with typing data
-    pub fn with_typing(
-        mut self,
-        typing: TypingIndicator,
-    ) -> Self {
+    pub fn with_typing(mut self, typing: TypingIndicator) -> Self {
         self.typing = Some(typing);
         self
     }
@@ -1065,22 +1051,19 @@ impl MessageEventListener {
         for convo in response.data.convos {
             // Check if this is a new conversation or updated one
             if let Some(last_message) = convo.last_message {
-                let event = MessageEvent::new(
-                    MessageEventType::NewMessage,
-                    convo.id.clone(),
-                )
-                .with_message(Message {
-                    id: last_message.id,
-                    text: last_message.text,
-                    sender: MessageSender {
-                        did: last_message.sender.did,
-                        handle: last_message.sender.handle,
-                        display_name: last_message.sender.display_name,
-                        avatar: last_message.sender.avatar,
-                    },
-                    sent_at: last_message.sent_at,
-                    is_from_self: None,
-                });
+                let event = MessageEvent::new(MessageEventType::NewMessage, convo.id.clone())
+                    .with_message(Message {
+                        id: last_message.id,
+                        text: last_message.text,
+                        sender: MessageSender {
+                            did: last_message.sender.did,
+                            handle: last_message.sender.handle,
+                            display_name: last_message.sender.display_name,
+                            avatar: last_message.sender.avatar,
+                        },
+                        sent_at: last_message.sent_at,
+                        is_from_self: None,
+                    });
                 events.push(event);
             }
         }
@@ -1164,11 +1147,7 @@ pub struct MessageRequest {
 
 impl MessageRequest {
     /// Create a new message request
-    pub fn new(
-        id: impl Into<String>,
-        sender: MessageSender,
-        received_at: DateTime<Utc>,
-    ) -> Self {
+    pub fn new(id: impl Into<String>, sender: MessageSender, received_at: DateTime<Utc>) -> Self {
         Self {
             id: id.into(),
             sender,
@@ -1342,26 +1321,17 @@ impl MessageRequestQueue {
 
     /// Get only pending requests
     pub fn pending_requests(&self) -> Vec<&MessageRequest> {
-        self.requests
-            .iter()
-            .filter(|r| r.is_pending())
-            .collect()
+        self.requests.iter().filter(|r| r.is_pending()).collect()
     }
 
     /// Get only accepted requests
     pub fn accepted_requests(&self) -> Vec<&MessageRequest> {
-        self.requests
-            .iter()
-            .filter(|r| r.is_accepted())
-            .collect()
+        self.requests.iter().filter(|r| r.is_accepted()).collect()
     }
 
     /// Get only declined requests
     pub fn declined_requests(&self) -> Vec<&MessageRequest> {
-        self.requests
-            .iter()
-            .filter(|r| r.is_declined())
-            .collect()
+        self.requests.iter().filter(|r| r.is_declined()).collect()
     }
 
     /// Count requests by status
@@ -1473,9 +1443,7 @@ impl ConversationService {
         &self,
         request_id: impl Into<String>,
     ) -> Result<AcceptMessageRequestResponse> {
-        let request_body = AcceptMessageRequestParams {
-            request_id: request_id.into(),
-        };
+        let request_body = AcceptMessageRequestParams { request_id: request_id.into() };
 
         let request = XrpcRequest::procedure("chat.bsky.convo.acceptMessageRequest")
             .json_body(&request_body)
@@ -1496,9 +1464,7 @@ impl ConversationService {
     ///
     /// * `request_id` - ID of the request to decline
     pub async fn decline_message_request(&self, request_id: impl Into<String>) -> Result<()> {
-        let request_body = DeclineMessageRequestParams {
-            request_id: request_id.into(),
-        };
+        let request_body = DeclineMessageRequestParams { request_id: request_id.into() };
 
         let request = XrpcRequest::procedure("chat.bsky.convo.declineMessageRequest")
             .json_body(&request_body)
@@ -1588,7 +1554,9 @@ impl InboxViewExt for InboxView {
         match event.event_type {
             MessageEventType::NewMessage => {
                 // Find the conversation and update it
-                if let Some(convo) = self.conversations.iter_mut()
+                if let Some(convo) = self
+                    .conversations
+                    .iter_mut()
                     .find(|c| c.id == event.conversation_id)
                 {
                     if let Some(ref message) = event.message {
@@ -1600,7 +1568,9 @@ impl InboxViewExt for InboxView {
             }
             MessageEventType::ConversationRead => {
                 // Mark conversation as read
-                if let Some(convo) = self.conversations.iter_mut()
+                if let Some(convo) = self
+                    .conversations
+                    .iter_mut()
                     .find(|c| c.id == event.conversation_id)
                 {
                     convo.unread_count = 0;
@@ -1721,10 +1691,7 @@ mod tests {
         };
 
         let convo = Conversation::new("convo123", vec![member]);
-        assert_eq!(
-            convo.other_participant_name(),
-            Some("Alice".to_string())
-        );
+        assert_eq!(convo.other_participant_name(), Some("Alice".to_string()));
 
         let member_no_display = MessageSender {
             did: "did:plc:test456".to_string(),
@@ -1734,10 +1701,7 @@ mod tests {
         };
 
         let convo2 = Conversation::new("convo456", vec![member_no_display]);
-        assert_eq!(
-            convo2.other_participant_name(),
-            Some("bob.bsky.social".to_string())
-        );
+        assert_eq!(convo2.other_participant_name(), Some("bob.bsky.social".to_string()));
     }
 
     #[test]
@@ -1778,10 +1742,7 @@ mod tests {
 
     #[test]
     fn test_message_error_display() {
-        let error = MessageError::MessageTooLong {
-            length: 15000,
-            max: 10000,
-        };
+        let error = MessageError::MessageTooLong { length: 15000, max: 10000 };
         let msg = format!("{}", error);
         assert!(msg.contains("15000"));
         assert!(msg.contains("10000"));
@@ -1909,10 +1870,7 @@ mod tests {
             create_test_conversation("3", "charlie", Some("Hi"), 1, 3),
         ]);
 
-        let filter = InboxFilter {
-            only_unread: true,
-            ..Default::default()
-        };
+        let filter = InboxFilter { only_unread: true, ..Default::default() };
 
         let unread = inbox.filter(&filter);
         assert_eq!(unread.len(), 2); // alice and charlie have unread
@@ -1928,10 +1886,7 @@ mod tests {
 
         let inbox = InboxView::new(vec![conv1, conv2]);
 
-        let filter = InboxFilter {
-            exclude_muted: true,
-            ..Default::default()
-        };
+        let filter = InboxFilter { exclude_muted: true, ..Default::default() };
 
         let unmuted = inbox.filter(&filter);
         assert_eq!(unmuted.len(), 1);
@@ -2344,13 +2299,11 @@ mod tests {
             avatar: None,
         };
 
-        let mut inbox = InboxView::new(vec![
-            Conversation::new("convo1", vec![sender.clone()])
-        ]);
+        let mut inbox = InboxView::new(vec![Conversation::new("convo1", vec![sender.clone()])]);
 
         let message = Message::new("msg1", "Hello", sender, Utc::now());
-        let event = MessageEvent::new(MessageEventType::NewMessage, "convo1")
-            .with_message(message.clone());
+        let event =
+            MessageEvent::new(MessageEventType::NewMessage, "convo1").with_message(message.clone());
 
         inbox.apply_event(&event).unwrap();
 
@@ -2390,13 +2343,11 @@ mod tests {
             avatar: None,
         };
 
-        let mut inbox = InboxView::new(vec![
-            Conversation::new("convo1", vec![sender.clone()])
-        ]);
+        let mut inbox = InboxView::new(vec![Conversation::new("convo1", vec![sender.clone()])]);
 
         let message = Message::new("msg1", "Hello", sender, Utc::now());
-        let event = MessageEvent::new(MessageEventType::NewMessage, "convo999")
-            .with_message(message);
+        let event =
+            MessageEvent::new(MessageEventType::NewMessage, "convo999").with_message(message);
 
         // Should not error, just no-op for nonexistent conversation
         inbox.apply_event(&event).unwrap();
@@ -2415,17 +2366,15 @@ mod tests {
             avatar: None,
         };
 
-        let mut inbox = InboxView::new(vec![
-            Conversation::new("convo1", vec![sender])
-        ]);
+        let mut inbox = InboxView::new(vec![Conversation::new("convo1", vec![sender])]);
 
         let typing = TypingIndicator {
             user_did: "did:plc:alice".to_string(),
             is_typing: true,
         };
 
-        let event = MessageEvent::new(MessageEventType::TypingIndicator, "convo1")
-            .with_typing(typing);
+        let event =
+            MessageEvent::new(MessageEventType::TypingIndicator, "convo1").with_typing(typing);
 
         // Should not error or modify state (typing is UI concern)
         inbox.apply_event(&event).unwrap();
@@ -2441,8 +2390,7 @@ mod tests {
         };
 
         let message = Message::new("msg1", "Test", sender, Utc::now());
-        let event = MessageEvent::new(MessageEventType::NewMessage, "convo1")
-            .with_message(message);
+        let event = MessageEvent::new(MessageEventType::NewMessage, "convo1").with_message(message);
 
         // Test serialization
         let json = serde_json::to_string(&event).unwrap();
@@ -2548,8 +2496,20 @@ mod tests {
     #[test]
     fn test_message_request_queue_creation() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello!"), 1, MessageRequestStatus::Pending),
-            create_test_message_request("2", "Bob", Some("Hi there"), 2, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello!"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
+            create_test_message_request(
+                "2",
+                "Bob",
+                Some("Hi there"),
+                2,
+                MessageRequestStatus::Pending,
+            ),
         ];
 
         let queue = MessageRequestQueue::new(requests);
@@ -2559,9 +2519,21 @@ mod tests {
     #[test]
     fn test_message_request_queue_pending_requests() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Accepted),
-            create_test_message_request("3", "Charlie", Some("Hey"), 3, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "3",
+                "Charlie",
+                Some("Hey"),
+                3,
+                MessageRequestStatus::Pending,
+            ),
         ];
 
         let queue = MessageRequestQueue::new(requests);
@@ -2574,9 +2546,21 @@ mod tests {
     #[test]
     fn test_message_request_queue_accepted_requests() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Accepted),
-            create_test_message_request("3", "Charlie", Some("Hey"), 3, MessageRequestStatus::Accepted),
+            create_test_message_request(
+                "3",
+                "Charlie",
+                Some("Hey"),
+                3,
+                MessageRequestStatus::Accepted,
+            ),
         ];
 
         let queue = MessageRequestQueue::new(requests);
@@ -2589,7 +2573,13 @@ mod tests {
     #[test]
     fn test_message_request_queue_declined_requests() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Declined),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Declined,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
         ];
 
@@ -2603,9 +2593,21 @@ mod tests {
     #[test]
     fn test_message_request_queue_count_by_status() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
-            create_test_message_request("3", "Charlie", Some("Hey"), 3, MessageRequestStatus::Accepted),
+            create_test_message_request(
+                "3",
+                "Charlie",
+                Some("Hey"),
+                3,
+                MessageRequestStatus::Accepted,
+            ),
             create_test_message_request("4", "Dave", Some("Yo"), 4, MessageRequestStatus::Declined),
         ];
 
@@ -2620,7 +2622,13 @@ mod tests {
     #[test]
     fn test_message_request_queue_find_by_id() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
         ];
 
@@ -2637,7 +2645,13 @@ mod tests {
     #[test]
     fn test_message_request_queue_find_by_sender() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
         ];
 
@@ -2653,9 +2667,13 @@ mod tests {
 
     #[test]
     fn test_message_request_queue_update_status() {
-        let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
-        ];
+        let requests = vec![create_test_message_request(
+            "1",
+            "Alice",
+            Some("Hello"),
+            1,
+            MessageRequestStatus::Pending,
+        )];
 
         let mut queue = MessageRequestQueue::new(requests);
 
@@ -2668,7 +2686,13 @@ mod tests {
     #[test]
     fn test_message_request_queue_remove() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
         ];
 
@@ -2686,9 +2710,21 @@ mod tests {
     #[test]
     fn test_message_request_queue_sort_by_recent() {
         let mut queue = MessageRequestQueue::new(vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 5, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                5,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 1, MessageRequestStatus::Pending),
-            create_test_message_request("3", "Charlie", Some("Hey"), 10, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "3",
+                "Charlie",
+                Some("Hey"),
+                10,
+                MessageRequestStatus::Pending,
+            ),
         ]);
 
         queue.sort_by_recent();
@@ -2700,7 +2736,13 @@ mod tests {
     #[test]
     fn test_message_request_queue_sort_by_sender() {
         let mut queue = MessageRequestQueue::new(vec![
-            create_test_message_request("1", "Charlie", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Charlie",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Alice", Some("Hi"), 2, MessageRequestStatus::Pending),
             create_test_message_request("3", "Bob", Some("Hey"), 3, MessageRequestStatus::Pending),
         ]);
@@ -2719,9 +2761,21 @@ mod tests {
     #[test]
     fn test_message_request_queue_filter_by_status() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Accepted),
-            create_test_message_request("3", "Charlie", Some("Hey"), 3, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "3",
+                "Charlie",
+                Some("Hey"),
+                3,
+                MessageRequestStatus::Pending,
+            ),
         ];
 
         let queue = MessageRequestQueue::new(requests);
@@ -2739,9 +2793,21 @@ mod tests {
     #[test]
     fn test_message_request_queue_filter_by_search_name() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
-            create_test_message_request("3", "Alicia", Some("Hey"), 3, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "3",
+                "Alicia",
+                Some("Hey"),
+                3,
+                MessageRequestStatus::Pending,
+            ),
         ];
 
         let queue = MessageRequestQueue::new(requests);
@@ -2758,9 +2824,27 @@ mod tests {
     #[test]
     fn test_message_request_queue_filter_by_search_message() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello world"), 1, MessageRequestStatus::Pending),
-            create_test_message_request("2", "Bob", Some("Hi there"), 2, MessageRequestStatus::Pending),
-            create_test_message_request("3", "Charlie", Some("Hello everyone"), 3, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello world"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
+            create_test_message_request(
+                "2",
+                "Bob",
+                Some("Hi there"),
+                2,
+                MessageRequestStatus::Pending,
+            ),
+            create_test_message_request(
+                "3",
+                "Charlie",
+                Some("Hello everyone"),
+                3,
+                MessageRequestStatus::Pending,
+            ),
         ];
 
         let queue = MessageRequestQueue::new(requests);
@@ -2777,17 +2861,26 @@ mod tests {
     #[test]
     fn test_message_request_queue_filter_with_limit() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
             create_test_message_request("2", "Bob", Some("Hi"), 2, MessageRequestStatus::Pending),
-            create_test_message_request("3", "Charlie", Some("Hey"), 3, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "3",
+                "Charlie",
+                Some("Hey"),
+                3,
+                MessageRequestStatus::Pending,
+            ),
         ];
 
         let queue = MessageRequestQueue::new(requests);
 
-        let filter = MessageRequestFilter {
-            limit: Some(2),
-            ..Default::default()
-        };
+        let filter = MessageRequestFilter { limit: Some(2), ..Default::default() };
 
         let filtered = queue.filter(&filter);
         assert_eq!(filtered.len(), 2);
@@ -2796,9 +2889,27 @@ mod tests {
     #[test]
     fn test_message_request_queue_filter_combined() {
         let requests = vec![
-            create_test_message_request("1", "Alice", Some("Hello"), 1, MessageRequestStatus::Pending),
-            create_test_message_request("2", "Bob", Some("Hello"), 2, MessageRequestStatus::Accepted),
-            create_test_message_request("3", "Charlie", Some("Hello"), 3, MessageRequestStatus::Pending),
+            create_test_message_request(
+                "1",
+                "Alice",
+                Some("Hello"),
+                1,
+                MessageRequestStatus::Pending,
+            ),
+            create_test_message_request(
+                "2",
+                "Bob",
+                Some("Hello"),
+                2,
+                MessageRequestStatus::Accepted,
+            ),
+            create_test_message_request(
+                "3",
+                "Charlie",
+                Some("Hello"),
+                3,
+                MessageRequestStatus::Pending,
+            ),
         ];
 
         let queue = MessageRequestQueue::new(requests);
@@ -2860,9 +2971,7 @@ mod tests {
 
     #[test]
     fn test_accept_message_request_params() {
-        let params = AcceptMessageRequestParams {
-            request_id: "req123".to_string(),
-        };
+        let params = AcceptMessageRequestParams { request_id: "req123".to_string() };
 
         let json = serde_json::to_string(&params).unwrap();
         assert!(json.contains("req123"));
@@ -2870,9 +2979,7 @@ mod tests {
 
     #[test]
     fn test_decline_message_request_params() {
-        let params = DeclineMessageRequestParams {
-            request_id: "req123".to_string(),
-        };
+        let params = DeclineMessageRequestParams { request_id: "req123".to_string() };
 
         let json = serde_json::to_string(&params).unwrap();
         assert!(json.contains("req123"));

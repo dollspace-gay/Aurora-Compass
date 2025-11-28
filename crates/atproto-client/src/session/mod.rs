@@ -36,7 +36,7 @@
 
 mod manager;
 
-pub use manager::{SessionManager, SessionManagerError, SessionStorage};
+pub use manager::{AccountExport, SessionManager, SessionManagerError, SessionStorage};
 
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
@@ -959,10 +959,7 @@ mod tests {
 
         // Set custom AppView URL
         account.app_view_url = Some("https://api.bsky.app".to_string());
-        assert_eq!(
-            account.app_view_url,
-            Some("https://api.bsky.app".to_string())
-        );
+        assert_eq!(account.app_view_url, Some("https://api.bsky.app".to_string()));
     }
 
     #[test]
@@ -987,10 +984,7 @@ mod tests {
         let deserialized: SessionAccount = serde_json::from_str(&json).unwrap();
 
         // Verify fields match
-        assert_eq!(
-            deserialized.app_view_url,
-            Some("https://custom.appview.social".to_string())
-        );
+        assert_eq!(deserialized.app_view_url, Some("https://custom.appview.social".to_string()));
         assert_eq!(account, deserialized);
     }
 

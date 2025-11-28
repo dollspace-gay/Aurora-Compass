@@ -469,8 +469,7 @@ impl SessionManager {
 
         // Configure agent with custom AppView if specified
         let mut agent = if let Some(ref app_view) = account.app_view_url {
-            let config = crate::agent::BskyAgentConfig::new(service)
-                .with_app_view(app_view);
+            let config = crate::agent::BskyAgentConfig::new(service).with_app_view(app_view);
             BskyAgent::with_config(config)?
         } else {
             BskyAgent::new(service)?
@@ -892,11 +891,14 @@ impl SessionManager {
 
             // Recreate agent with new configuration if account has tokens
             if account_data.has_tokens() {
-                let service = account_data.pds_url.as_ref().unwrap_or(&account_data.service);
+                let service = account_data
+                    .pds_url
+                    .as_ref()
+                    .unwrap_or(&account_data.service);
 
                 let mut agent = if let Some(ref app_view) = account_data.app_view_url {
-                    let config = crate::agent::BskyAgentConfig::new(service)
-                        .with_app_view(app_view);
+                    let config =
+                        crate::agent::BskyAgentConfig::new(service).with_app_view(app_view);
                     BskyAgent::with_config(config)?
                 } else {
                     BskyAgent::new(service)?
@@ -1137,7 +1139,10 @@ impl SessionManager {
         if let Some(account_data) = export.account_data {
             if let Some(kv) = kv_store {
                 kv.import_account_data(&account_data).map_err(|e| {
-                    SessionManagerError::InvalidOperation(format!("Failed to import KV data: {}", e))
+                    SessionManagerError::InvalidOperation(format!(
+                        "Failed to import KV data: {}",
+                        e
+                    ))
                 })?;
             }
         }
@@ -1409,10 +1414,7 @@ mod tests {
 
         // Verify it's persisted
         let account = manager.get_account("did:plc:abc123").unwrap();
-        assert_eq!(
-            account.app_view_url,
-            Some("https://api.bsky.app".to_string())
-        );
+        assert_eq!(account.app_view_url, Some("https://api.bsky.app".to_string()));
     }
 
     #[tokio::test]
@@ -1446,17 +1448,11 @@ mod tests {
         let mut manager = SessionManager::new_in_memory().await.unwrap();
 
         let result = manager
-            .set_account_app_view(
-                "did:plc:nonexistent",
-                Some("https://api.bsky.app".to_string()),
-            )
+            .set_account_app_view("did:plc:nonexistent", Some("https://api.bsky.app".to_string()))
             .await;
 
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            SessionManagerError::AccountNotFound(_)
-        ));
+        assert!(matches!(result.unwrap_err(), SessionManagerError::AccountNotFound(_)));
     }
 
     #[tokio::test]
@@ -1501,10 +1497,7 @@ mod tests {
             assert_eq!(app_view, Some("https://custom.appview".to_string()));
 
             let account = manager.get_account("did:plc:abc123").unwrap();
-            assert_eq!(
-                account.app_view_url,
-                Some("https://custom.appview".to_string())
-            );
+            assert_eq!(account.app_view_url, Some("https://custom.appview".to_string()));
         }
     }
 
@@ -1564,21 +1557,15 @@ mod tests {
             .unwrap();
 
         // Verify tokens were included
-        assert_eq!(
-            export.account.access_jwt,
-            Some("secret_access_token".to_string())
-        );
-        assert_eq!(
-            export.account.refresh_jwt,
-            Some("secret_refresh_token".to_string())
-        );
+        assert_eq!(export.account.access_jwt, Some("secret_access_token".to_string()));
+        assert_eq!(export.account.refresh_jwt, Some("secret_refresh_token".to_string()));
         assert!(export.tokens_included);
     }
 
     #[tokio::test]
     async fn test_export_account_with_kv_data() {
-        use storage::kv::{AccountStore, KvStore};
         use std::sync::Arc;
+        use storage::kv::{AccountStore, KvStore};
 
         let mut manager = SessionManager::new_in_memory().await.unwrap();
 
@@ -1674,8 +1661,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_import_account_merge() {
-        use storage::kv::{AccountStore, KvStore};
         use std::sync::Arc;
+        use storage::kv::{AccountStore, KvStore};
 
         let mut manager = SessionManager::new_in_memory().await.unwrap();
 
@@ -1729,8 +1716,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_import_account_replace() {
-        use storage::kv::{AccountStore, KvStore, AccountDataExport};
         use std::sync::Arc;
+        use storage::kv::{AccountDataExport, AccountStore, KvStore};
 
         let mut manager = SessionManager::new_in_memory().await.unwrap();
 
@@ -1789,8 +1776,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_import_export_roundtrip() {
-        use storage::kv::{AccountStore, KvStore};
         use std::sync::Arc;
+        use storage::kv::{AccountStore, KvStore};
 
         let mut manager1 = SessionManager::new_in_memory().await.unwrap();
 
@@ -1836,9 +1823,7 @@ mod tests {
         assert_eq!(imported.access_jwt, Some("access_token".to_string()));
         assert_eq!(imported.refresh_jwt, Some("refresh_token".to_string()));
 
-        let kv_value: Option<String> = account_store2
-            .get("did:plc:roundtrip", "test_key")
-            .unwrap();
+        let kv_value: Option<String> = account_store2.get("did:plc:roundtrip", "test_key").unwrap();
         assert_eq!(kv_value, Some("test_value".to_string()));
     }
 
@@ -1864,10 +1849,7 @@ mod tests {
         // Should fail with unsupported version error
         let result = manager.import_account(export, false, None).await;
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            SessionManagerError::InvalidOperation(_)
-        ));
+        assert!(matches!(result.unwrap_err(), SessionManagerError::InvalidOperation(_)));
     }
 
     #[tokio::test]
@@ -1879,10 +1861,7 @@ mod tests {
             .await;
 
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            SessionManagerError::AccountNotFound(_)
-        ));
+        assert!(matches!(result.unwrap_err(), SessionManagerError::AccountNotFound(_)));
     }
 
     #[tokio::test]

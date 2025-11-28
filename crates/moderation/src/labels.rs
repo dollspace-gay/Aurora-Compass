@@ -404,14 +404,15 @@ pub struct LabelApplicator {
 impl LabelApplicator {
     /// Create a new label applicator
     pub fn new(subscriptions: LabelerSubscriptions) -> Self {
-        Self {
-            subscriptions,
-            definitions: HashMap::new(),
-        }
+        Self { subscriptions, definitions: HashMap::new() }
     }
 
     /// Add label definitions for a labeler
-    pub fn add_definitions(&mut self, labeler_did: impl Into<String>, definitions: Vec<LabelDefinition>) {
+    pub fn add_definitions(
+        &mut self,
+        labeler_did: impl Into<String>,
+        definitions: Vec<LabelDefinition>,
+    ) {
         let defs = self.definitions.entry(labeler_did.into()).or_default();
         for def in definitions {
             defs.insert(def.identifier.clone(), def);
@@ -508,15 +509,12 @@ pub struct LabelerService {
 impl LabelerService {
     /// Create a new labeler service
     pub fn new(client: XrpcClient) -> Self {
-        Self {
-            client: Arc::new(RwLock::new(client)),
-        }
+        Self { client: Arc::new(RwLock::new(client)) }
     }
 
     /// Get labeler profile
     pub async fn get_labeler(&self, did: &str) -> Result<LabelerProfile> {
-        let request = XrpcRequest::query("app.bsky.labeler.getServices")
-            .param("dids", did);
+        let request = XrpcRequest::query("app.bsky.labeler.getServices").param("dids", did);
 
         let client = self.client.read().await;
 
@@ -545,8 +543,7 @@ impl LabelerService {
         }
 
         let dids_str = dids.join(",");
-        let request = XrpcRequest::query("app.bsky.labeler.getServices")
-            .param("dids", dids_str);
+        let request = XrpcRequest::query("app.bsky.labeler.getServices").param("dids", dids_str);
 
         let client = self.client.read().await;
 
@@ -565,8 +562,7 @@ impl LabelerService {
 
     /// Get labels for a subject (account or content)
     pub async fn get_labels(&self, uri: &str) -> Result<Vec<Label>> {
-        let request = XrpcRequest::query("com.atproto.label.queryLabels")
-            .param("uriPatterns", uri);
+        let request = XrpcRequest::query("com.atproto.label.queryLabels").param("uriPatterns", uri);
 
         let client = self.client.read().await;
 
@@ -591,9 +587,7 @@ impl LabelerService {
             labeler_did: String,
         }
 
-        let request_body = SubscribeRequest {
-            labeler_did: labeler_did.to_string(),
-        };
+        let request_body = SubscribeRequest { labeler_did: labeler_did.to_string() };
 
         let request = XrpcRequest::procedure("app.bsky.labeler.subscribe")
             .param("repo", repo)
@@ -617,9 +611,7 @@ impl LabelerService {
             labeler_did: String,
         }
 
-        let request_body = UnsubscribeRequest {
-            labeler_did: labeler_did.to_string(),
-        };
+        let request_body = UnsubscribeRequest { labeler_did: labeler_did.to_string() };
 
         let request = XrpcRequest::procedure("app.bsky.labeler.unsubscribe")
             .param("repo", repo)
@@ -930,8 +922,9 @@ mod tests {
         subs.subscribe("did:plc:labeler");
 
         let mut applicator = LabelApplicator::new(subs);
-        applicator.add_definitions("did:plc:labeler", vec![
-            LabelDefinition {
+        applicator.add_definitions(
+            "did:plc:labeler",
+            vec![LabelDefinition {
                 identifier: "nsfw".to_string(),
                 locales: Some(vec![LabelLocale {
                     lang: "en".to_string(),
@@ -943,8 +936,8 @@ mod tests {
                 applies_to_content: true,
                 default_behavior: LabelBehavior::Hide,
                 user_configurable: true,
-            },
-        ]);
+            }],
+        );
 
         let labels = vec![Label {
             src: "did:plc:labeler".to_string(),
@@ -968,26 +961,29 @@ mod tests {
         subs.subscribe("did:plc:labeler");
 
         let mut applicator = LabelApplicator::new(subs);
-        applicator.add_definitions("did:plc:labeler", vec![
-            LabelDefinition {
-                identifier: "warn".to_string(),
-                locales: None,
-                severity: 1,
-                applies_to_account: false,
-                applies_to_content: true,
-                default_behavior: LabelBehavior::Warn,
-                user_configurable: true,
-            },
-            LabelDefinition {
-                identifier: "block".to_string(),
-                locales: None,
-                severity: 5,
-                applies_to_account: false,
-                applies_to_content: true,
-                default_behavior: LabelBehavior::Block,
-                user_configurable: true,
-            },
-        ]);
+        applicator.add_definitions(
+            "did:plc:labeler",
+            vec![
+                LabelDefinition {
+                    identifier: "warn".to_string(),
+                    locales: None,
+                    severity: 1,
+                    applies_to_account: false,
+                    applies_to_content: true,
+                    default_behavior: LabelBehavior::Warn,
+                    user_configurable: true,
+                },
+                LabelDefinition {
+                    identifier: "block".to_string(),
+                    locales: None,
+                    severity: 5,
+                    applies_to_account: false,
+                    applies_to_content: true,
+                    default_behavior: LabelBehavior::Block,
+                    user_configurable: true,
+                },
+            ],
+        );
 
         let labels = vec![
             Label {
@@ -1023,9 +1019,7 @@ mod tests {
         subs.subscribe("did:plc:labeler");
 
         let mut applicator = LabelApplicator::new(subs);
-        applicator.add_definitions("did:plc:labeler", vec![
-            LabelDefinition::new("nsfw"),
-        ]);
+        applicator.add_definitions("did:plc:labeler", vec![LabelDefinition::new("nsfw")]);
 
         let labels = vec![Label {
             src: "did:plc:labeler".to_string(),
