@@ -13,8 +13,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
-# Database
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
+# Database (using default-features = false to avoid pulling in mysql/postgres drivers)
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
 
 # Key-value store
 sled = { version = "0.34", features = ["compression"] }
