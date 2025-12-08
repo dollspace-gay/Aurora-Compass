@@ -23,7 +23,7 @@ sled = { version = "0.34", features = ["compression"] }
 md5 = "0.7"
 
 # Cache
-lru = "0.12"
+lru = "0.16"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
