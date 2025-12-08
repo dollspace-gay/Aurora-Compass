@@ -10,7 +10,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 # Internationalization
-fluent = "0.16"
+fluent = "0.17"
 fluent-langneg = "0.14"
 unic-langid = "0.9"
 
