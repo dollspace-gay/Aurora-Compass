@@ -20,7 +20,7 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-r
 sled = { version = "0.34", features = ["compression"] }
 
 # Migration checksums
-md5 = "0.7"
+md5 = "0.8"
 
 # Cache
 lru = "0.12"
